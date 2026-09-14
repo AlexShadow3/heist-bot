@@ -94,7 +94,7 @@ module.exports = {
                 { label: '1. Épicerie', description: 'Facile (80 % succès) | Pied-de-biche optionnel', value: 'epicerie' },
                 { label: '2. Bijouterie de quartier', description: 'Moyen (60 % succès) | Coupe-boulon optionnel', value: 'bijouterie' },
                 { label: '3. Banque de quartier', description: 'Difficile (45 % succès) | Brouilleur radio requis', value: 'banque_quartier' },
-                { label: '4. Magasin de luxe', description: 'Très difficile (40 % succès) | Crochetage optionnel + Hack', value: 'magasin_luxe' },
+                { label: '4. Magasin de luxe', description: 'Très difficile (40 % succès) | Crochetage requis + Hack', value: 'magasin_luxe' },
                 { label: '5. Banque centrale', description: 'Extrême (25 % succès) | Perceuse requise + Hack expert', value: 'banque' },
             ]);
 
