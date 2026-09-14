@@ -74,4 +74,17 @@ module.exports = {
         }
         return false;
     },
+
+    // À ajouter dans les exports de database.js :
+
+    releasePlayer(userId) {
+        db.prepare('UPDATE players SET jailedUntil = 0 WHERE userId = ?').run(userId);
+    },
+
+    increaseJailTime(userId, extraMinutes) {
+        const player = this.getPlayer(userId);
+        const base = player.jailedUntil > Date.now() ? player.jailedUntil : Date.now();
+        const newUntil = base + extraMinutes * 60 * 1000;
+        db.prepare('UPDATE players SET jailedUntil = ? WHERE userId = ?').run(newUntil, userId);
+    },
 };
