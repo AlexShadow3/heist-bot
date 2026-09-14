@@ -124,4 +124,25 @@ module.exports = {
       LIMIT ?
     `).all(limit);
     },
+
+    depositToStash(userId, grossAmount, taxRate = 0.10) {
+        const fee = Math.floor(grossAmount * taxRate);
+        const netAmount = grossAmount - fee;
+
+        const transaction = db.transaction(() => {
+            db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(grossAmount, userId);
+            db.prepare('UPDATE players SET stash = stash + ? WHERE userId = ?').run(netAmount, userId);
+        });
+        transaction();
+
+        return { fee, netAmount };
+    },
+
+    withdrawFromStash(userId, amount) {
+        const transaction = db.transaction(() => {
+            db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(amount, userId);
+            db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
+        });
+        transaction();
+    },
 };
