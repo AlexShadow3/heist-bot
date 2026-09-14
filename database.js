@@ -36,12 +36,19 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS lawyer_services (
+    userId TEXT PRIMARY KEY,
+    expiresAt INTEGER DEFAULT 0
+  )
+`).run();
+
 module.exports = {
     getPlayer(userId) {
         let player = db.prepare('SELECT * FROM players WHERE userId = ?').get(userId);
         if (!player) {
-            db.prepare('INSERT INTO players (userId, cash, jailedUntil) VALUES (?, 500, 0)').run(userId);
-            player = { userId, cash: 500, jailedUntil: 0 };
+            db.prepare('INSERT INTO players (userId, cash, stash, jailedUntil) VALUES (?, 500, 0, 0)').run(userId);
+            player = { userId, cash: 500, stash: 0, jailedUntil: 0 };
         }
         return player;
     },
@@ -50,16 +57,45 @@ module.exports = {
         db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
     },
 
+    depositToStash(userId, grossAmount, taxRate = 0.10) {
+        const fee = Math.floor(grossAmount * taxRate);
+        const netAmount = grossAmount - fee;
+        const transaction = db.transaction(() => {
+            db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(grossAmount, userId);
+            db.prepare('UPDATE players SET stash = stash + ? WHERE userId = ?').run(netAmount, userId);
+        });
+        transaction();
+        return { fee, netAmount };
+    },
+
+    withdrawFromStash(userId, amount) {
+        const transaction = db.transaction(() => {
+            db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(amount, userId);
+            db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
+        });
+        transaction();
+    },
+
     jailPlayer(userId, minutes) {
         const until = Date.now() + minutes * 60 * 1000;
         db.prepare('UPDATE players SET jailedUntil = ? WHERE userId = ?').run(until, userId);
+    },
+
+    releasePlayer(userId) {
+        db.prepare('UPDATE players SET jailedUntil = 0 WHERE userId = ?').run(userId);
+    },
+
+    increaseJailTime(userId, extraMinutes) {
+        const player = this.getPlayer(userId);
+        const base = player.jailedUntil > Date.now() ? player.jailedUntil : Date.now();
+        const newUntil = base + extraMinutes * 60 * 1000;
+        db.prepare('UPDATE players SET jailedUntil = ? WHERE userId = ?').run(newUntil, userId);
     },
 
     isJailed(player) {
         return player.jailedUntil > Date.now();
     },
 
-    // Gestion de l'inventaire
     getItemQuantity(userId, itemId) {
         const row = db.prepare('SELECT quantity FROM inventory WHERE userId = ? AND itemId = ?').get(userId, itemId);
         return row ? row.quantity : 0;
@@ -72,11 +108,23 @@ module.exports = {
     buyItem(userId, itemId, price) {
         const transaction = db.transaction(() => {
             db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(price, userId);
-            db.prepare(`
-        INSERT INTO inventory (userId, itemId, quantity)
-        VALUES (?, ?, 1)
-        ON CONFLICT(userId, itemId) DO UPDATE SET quantity = quantity + 1
-      `).run(userId, itemId);
+
+            if (itemId === 'lawyer') {
+                const row = db.prepare('SELECT expiresAt FROM lawyer_services WHERE userId = ?').get(userId);
+                const currentExp = row && row.expiresAt > Date.now() ? row.expiresAt : Date.now();
+                const newExp = currentExp + 60 * 60 * 1000; // +1 heure
+                db.prepare(`
+          INSERT INTO lawyer_services (userId, expiresAt)
+          VALUES (?, ?)
+          ON CONFLICT(userId) DO UPDATE SET expiresAt = ?
+        `).run(userId, newExp, newExp);
+            } else {
+                db.prepare(`
+          INSERT INTO inventory (userId, itemId, quantity)
+          VALUES (?, ?, 1)
+          ON CONFLICT(userId, itemId) DO UPDATE SET quantity = quantity + 1
+        `).run(userId, itemId);
+            }
         });
         transaction();
     },
@@ -90,15 +138,14 @@ module.exports = {
         return false;
     },
 
-    releasePlayer(userId) {
-        db.prepare('UPDATE players SET jailedUntil = 0 WHERE userId = ?').run(userId);
+    hasActiveLawyer(userId) {
+        const row = db.prepare('SELECT expiresAt FROM lawyer_services WHERE userId = ?').get(userId);
+        return row && row.expiresAt > Date.now();
     },
 
-    increaseJailTime(userId, extraMinutes) {
-        const player = this.getPlayer(userId);
-        const base = player.jailedUntil > Date.now() ? player.jailedUntil : Date.now();
-        const newUntil = base + extraMinutes * 60 * 1000;
-        db.prepare('UPDATE players SET jailedUntil = ? WHERE userId = ?').run(newUntil, userId);
+    getLawyerExpiresAt(userId) {
+        const row = db.prepare('SELECT expiresAt FROM lawyer_services WHERE userId = ?').get(userId);
+        return row ? row.expiresAt : 0;
     },
 
     transferCash(fromUserId, toUserId, amount) {
@@ -131,10 +178,10 @@ module.exports = {
     setEscapeCooldown(userId, minutes) {
         const until = Date.now() + minutes * 60 * 1000;
         db.prepare(`
-            INSERT INTO escape_cooldowns (userId, availableAt)
-            VALUES (?, ?)
-            ON CONFLICT(userId) DO UPDATE SET availableAt = ?
-        `).run(userId, until, until);
+      INSERT INTO escape_cooldowns (userId, availableAt)
+      VALUES (?, ?)
+      ON CONFLICT(userId) DO UPDATE SET availableAt = ?
+    `).run(userId, until, until);
     },
 
     getTopPlayers(limit = 10) {
@@ -144,26 +191,5 @@ module.exports = {
       ORDER BY netWorth DESC
       LIMIT ?
     `).all(limit);
-    },
-
-    depositToStash(userId, grossAmount, taxRate = 0.10) {
-        const fee = Math.floor(grossAmount * taxRate);
-        const netAmount = grossAmount - fee;
-
-        const transaction = db.transaction(() => {
-            db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(grossAmount, userId);
-            db.prepare('UPDATE players SET stash = stash + ? WHERE userId = ?').run(netAmount, userId);
-        });
-        transaction();
-
-        return { fee, netAmount };
-    },
-
-    withdrawFromStash(userId, amount) {
-        const transaction = db.transaction(() => {
-            db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(amount, userId);
-            db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
-        });
-        transaction();
     },
 };

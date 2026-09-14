@@ -8,11 +8,62 @@ const {
     ComponentType,
 } = require('discord.js');
 const db = require('../../database');
+const items = require('../../items');
 
 const TARGETS = {
-    epicerie: { name: 'Épicerie', loot: [200, 600], successRate: 0.8, jailTime: 2 },
-    bijouterie: { name: 'Bijouterie', loot: [800, 2000], successRate: 0.55, jailTime: 5 },
-    banque: { name: 'Banque centrale', loot: [3000, 8000], successRate: 0.3, jailTime: 10, requires: 'drill' },
+    epicerie: {
+        name: 'Épicerie',
+        loot: [200, 600],
+        successRate: 0.8,
+        jailTime: 2,
+        optionalItem: 'crowbar',
+        bonusRate: 0.10,
+        btnLabel: 'Utiliser Pied-de-biche (+10 %)',
+    },
+    bijouterie: {
+        name: 'Bijouterie de quartier',
+        loot: [800, 2000],
+        successRate: 0.60,
+        jailTime: 5,
+        optionalItem: 'bolt_cutter',
+        bonusRate: 0.10,
+        btnLabel: 'Utiliser Coupe-boulon (+10 %)',
+    },
+    banque_quartier: {
+        name: 'Banque de quartier',
+        loot: [2000, 4500],
+        successRate: 0.45,
+        jailTime: 7,
+        requires: 'jammer',
+    },
+    magasin_luxe: {
+        name: 'Magasin de luxe',
+        loot: [3500, 7500],
+        successRate: 0.40,
+        jailTime: 8,
+        requires: 'lockpick_kit',
+        bonusRate: 0.15,
+        btnLabel: 'Utiliser Kit de crochetage (+15 %)',
+        hack: {
+            title: 'VITRINES CONNECTÉES - MAGASIN DE LUXE',
+            length: 4,
+            time: 8_000,
+            bonus: 0.15,
+        }
+    },
+    banque: {
+        name: 'Banque centrale',
+        loot: [6000, 15000],
+        successRate: 0.25,
+        jailTime: 12,
+        requires: 'drill',
+        hack: {
+            title: 'SERVEUR MAINFRAME — BANQUE CENTRALE',
+            length: 6,
+            time: 7_000,
+            bonus: 0.25,
+        },
+    },
 };
 
 const HACK_KEYS = [
@@ -40,14 +91,15 @@ module.exports = {
             .setCustomId('select_target')
             .setPlaceholder('Choisis la cible du braquage')
             .addOptions([
-                { label: 'Épicerie', description: 'Faible butin, peu de risques (80% succès)', value: 'epicerie' },
-                { label: 'Bijouterie', description: 'Bon butin, risque moyen (55% succès)', value: 'bijouterie' },
-                { label: 'Banque centrale (Perceuse requise + Hack)', description: 'Jackpot massif, mini-jeu sous pression', value: 'banque' },
+                { label: '1. Épicerie', description: 'Facile (80 % succès) | Pied-de-biche optionnel', value: 'epicerie' },
+                { label: '2. Bijouterie de quartier', description: 'Moyen (60 % succès) | Coupe-boulon optionnel', value: 'bijouterie' },
+                { label: '3. Banque de quartier', description: 'Difficile (45 % succès) | Brouilleur radio requis', value: 'banque_quartier' },
+                { label: '4. Magasin de luxe', description: 'Très difficile (40 % succès) | Crochetage optionnel + Hack', value: 'magasin_luxe' },
+                { label: '5. Banque centrale', description: 'Extrême (25 % succès) | Perceuse requise + Hack expert', value: 'banque' },
             ]);
 
         const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
-        // Étape 1 : Menu de sélection éphémère (visible uniquement par le leader)
         const initialMsg = await interaction.reply({
             content: '🎯 **Choisis une cible dans le menu ci-dessous :**',
             components: [selectRow],
@@ -73,16 +125,17 @@ module.exports = {
         const target = TARGETS[selectedKey];
 
         if (target.requires && db.getItemQuantity(interaction.user.id, target.requires) < 1) {
+            const reqName = items[target.requires]?.name || target.requires;
             return interaction.followUp({
-                content: `❌ Tu n'as pas l'équipement requis (**${target.requires}**) pour braquer cette cible ! Passe par le \`/shop\`.`,
+                content: `❌ Tu n'as pas l'équipement requis (**${reqName}**) pour lancer ce braquage ! Passe par le \`/shop\`.`,
                 ephemeral: true,
             });
         }
 
         let team = [interaction.user];
         let isCancelled = false;
+        let toolUser = null;
 
-        // Étape 2 : Création du lobby public avec boutons d'action
         const joinBtn = new ButtonBuilder()
             .setCustomId('join_heist')
             .setLabel("Rejoindre l'équipe")
@@ -98,13 +151,32 @@ module.exports = {
             .setLabel('Annuler le braquage')
             .setStyle(ButtonStyle.Danger);
 
-        const lobbyRow = new ActionRowBuilder().addComponents(joinBtn, leaveBtn, cancelBtn);
+        const lobbyComponents = [joinBtn, leaveBtn, cancelBtn];
 
-        const renderLobby = () => new EmbedBuilder()
-            .setTitle(`🔫 Préparation : ${target.name}`)
-            .setDescription(`Leader : ${interaction.user}\n\n**Équipe actuelle (${team.length}) :**\n${team.map(u => `• ${u.username}`).join('\n')}`)
-            .setColor(0xFEE75C)
-            .setFooter({ text: 'Départ du convoi dans 30 secondes...' });
+        if (target.optionalItem) {
+            const useToolBtn = new ButtonBuilder()
+                .setCustomId('use_tool')
+                .setLabel(target.btnLabel)
+                .setStyle(ButtonStyle.Primary);
+            lobbyComponents.push(useToolBtn);
+        }
+
+        const lobbyRow = new ActionRowBuilder().addComponents(lobbyComponents);
+
+        const renderLobby = () => {
+            let toolStatus = '';
+            if (target.optionalItem) {
+                toolStatus = toolUser
+                    ? `\n🔧 **Équipement activé :** ${items[target.optionalItem].name} par ${toolUser.username}`
+                    : `\n🔧 **Équipement disponible :** Aucun activé (cliquez sur le bouton bleu)`;
+            }
+
+            return new EmbedBuilder()
+                .setTitle(`Préparation : ${target.name}`)
+                .setDescription(`Leader : ${interaction.user}\n\n**Équipe actuelle (${team.length}) :**\n${team.map(u => `• ${u.username}`).join('\n')}${toolStatus}`)
+                .setColor(0xFEE75C)
+                .setFooter({ text: 'Départ du convoi dans 30 secondes...' });
+        };
 
         const lobbyMsg = await interaction.channel.send({
             content: `🚨 **${interaction.user.username}** prépare un braquage sur **${target.name}** !`,
@@ -118,7 +190,6 @@ module.exports = {
         });
 
         lobbyCollector.on('collect', async btnInteraction => {
-            // Cas 1 : Annulation par le leader
             if (btnInteraction.customId === 'cancel_heist') {
                 if (btnInteraction.user.id !== interaction.user.id) {
                     return btnInteraction.reply({
@@ -126,40 +197,33 @@ module.exports = {
                         ephemeral: true,
                     });
                 }
-
                 isCancelled = true;
                 lobbyCollector.stop('cancelled');
-                await btnInteraction.update({
+                return btnInteraction.update({
                     content: '🛑 **Braquage annulé par le chef d\'équipe.**',
                     embeds: [],
                     components: [],
                 });
-                return;
             }
 
-            // Cas 2 : Quitter l'équipe
             if (btnInteraction.customId === 'leave_heist') {
                 if (btnInteraction.user.id === interaction.user.id) {
                     return btnInteraction.reply({
-                        content: 'En tant que leader, tu ne peux pas quitter ton propre braquage. Utilise plutôt le bouton "Annuler".',
+                        content: 'En tant que leader, utilise le bouton "Annuler".',
                         ephemeral: true,
                     });
                 }
-
                 if (!team.some(u => u.id === btnInteraction.user.id)) {
-                    return btnInteraction.reply({
-                        content: 'Tu ne fais pas partie de l\'équipe.',
-                        ephemeral: true,
-                    });
+                    return btnInteraction.reply({ content: 'Tu ne fais pas partie de l\'équipe.', ephemeral: true });
                 }
-
+                if (toolUser && toolUser.id === btnInteraction.user.id) {
+                    toolUser = null;
+                }
                 team = team.filter(u => u.id !== btnInteraction.user.id);
                 await btnInteraction.reply({ content: 'Tu as quitté l\'équipe de braquage.', ephemeral: true });
-                await lobbyMsg.edit({ embeds: [renderLobby()] });
-                return;
+                return lobbyMsg.edit({ embeds: [renderLobby()] });
             }
 
-            // Cas 3 : Rejoindre l'équipe
             if (btnInteraction.customId === 'join_heist') {
                 const p = db.getPlayer(btnInteraction.user.id);
                 if (db.isJailed(p)) {
@@ -168,10 +232,27 @@ module.exports = {
                 if (team.some(u => u.id === btnInteraction.user.id)) {
                     return btnInteraction.reply({ content: 'Tu es déjà dans l\'équipe.', ephemeral: true });
                 }
-
                 team.push(btnInteraction.user);
                 await btnInteraction.reply({ content: 'Tu as rejoint l\'équipe !', ephemeral: true });
-                await lobbyMsg.edit({ embeds: [renderLobby()] });
+                return lobbyMsg.edit({ embeds: [renderLobby()] });
+            }
+
+            if (btnInteraction.customId === 'use_tool') {
+                if (!team.some(u => u.id === btnInteraction.user.id)) {
+                    return btnInteraction.reply({ content: 'Tu dois rejoindre l\'équipe avant d\'utiliser ton matériel.', ephemeral: true });
+                }
+                if (db.getItemQuantity(btnInteraction.user.id, target.optionalItem) < 1) {
+                    return btnInteraction.reply({
+                        content: `❌ Tu ne possèdes pas de **${items[target.optionalItem].name}** dans ton inventaire ! Achète-le au \`/shop\`.`,
+                        ephemeral: true,
+                    });
+                }
+                toolUser = btnInteraction.user;
+                await btnInteraction.reply({
+                    content: `🔧 Tu as engagé ton **${items[target.optionalItem].name}** pour ce braquage (+${Math.round(target.bonusRate * 100)} % succès) ! Attention, il se brisera en cas d'échec.`,
+                    ephemeral: true,
+                });
+                return lobbyMsg.edit({ embeds: [renderLobby()] });
             }
         });
 
@@ -180,13 +261,12 @@ module.exports = {
 
             let hackBonus = 0;
 
-            // Étape 3 : Mini-jeu de hacking si Banque centrale
-            if (selectedKey === 'banque') {
-                const sequenceLength = 4;
-                const sequence = Array.from({ length: sequenceLength }, () =>
+            // Mini-jeu de piratage si configuré sur la cible
+            if (target.hack) {
+                const { length: seqLen, time: hackTime, bonus: hackRate, title: hackTitle } = target.hack;
+                const sequence = Array.from({ length: seqLen }, () =>
                     HACK_KEYS[Math.floor(Math.random() * HACK_KEYS.length)]
                 );
-
                 const sequenceDisplay = sequence.map(k => k.emoji).join('  ');
                 let currentStep = 0;
 
@@ -199,25 +279,24 @@ module.exports = {
                 );
 
                 const hackRow = new ActionRowBuilder().addComponents(hackButtons);
-
                 const hackEmbed = new EmbedBuilder()
-                    .setTitle('💻 TERMINAL DE SÉCURITÉ — BANQUE CENTRALE')
-                    .setDescription(`**${interaction.user}**, court-circuite le pare-feu !\nReproduis la séquence exacte suivante dans les 10 secondes :\n\n# ${sequenceDisplay}\n\nProgression : \`[ . . . . ]\``)
+                    .setTitle(`💻 ${hackTitle}`)
+                    .setDescription(`**${interaction.user}**, pirate le boîtier !\nReproduis la séquence dans les **${hackTime / 1000} secondes** :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${Array(seqLen).fill('.').join(' ')} ]\``)
                     .setColor(0x3498DB)
                     .setFooter({ text: 'Seul le leader peut manipuler le boîtier de piratage.' });
 
                 await lobbyMsg.edit({
-                    content: '⚡ **HACKING EN COURS...**',
+                    content: '⚡ **PIRATAGE EN COURS...**',
                     embeds: [hackEmbed],
                     components: [hackRow],
                 });
 
                 const hackCollector = lobbyMsg.createMessageComponentCollector({
                     componentType: ComponentType.Button,
-                    time: 10_000,
+                    time: hackTime,
                 });
 
-                let hackSuccess = false;
+                let hackFinished = false;
 
                 for await (const [btnInteraction] of hackCollector[Symbol.asyncIterator]()) {
                     if (btnInteraction.user.id !== interaction.user.id) {
@@ -229,14 +308,14 @@ module.exports = {
                         currentStep++;
                         const progress = sequence.map((_, idx) => (idx < currentStep ? '✓' : '.')).join(' ');
 
-                        if (currentStep === sequenceLength) {
-                            hackSuccess = true;
-                            hackBonus = 0.25;
+                        if (currentStep === seqLen) {
+                            hackFinished = true;
+                            hackBonus = hackRate;
                             await btnInteraction.update({
                                 embeds: [
                                     new EmbedBuilder()
-                                        .setTitle('🔓 PARE-FEU DÉSACTIVÉ !')
-                                        .setDescription('Caméras neutralisées et portes blindées déverrouillées ! (+25 % de succès)')
+                                        .setTitle('🔓 SYSTÈMES DÉCONNECTÉS !')
+                                        .setDescription(`Sécurité neutralisée ! (+${Math.round(hackRate * 100)} % de chances)`)
                                         .setColor(0x57F287),
                                 ],
                                 components: [],
@@ -244,16 +323,18 @@ module.exports = {
                             hackCollector.stop('completed');
                             break;
                         } else {
-                            hackEmbed.setDescription(`**${interaction.user}**, court-circuite le pare-feu !\nSéquence :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${progress} ]\``);
+                            hackEmbed.setDescription(`**${interaction.user}**, pirate le boîtier !\nSéquence :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${progress} ]\``);
                             await btnInteraction.update({ embeds: [hackEmbed] });
                         }
                     } else {
+                        hackFinished = true;
+                        hackBonus = -hackRate;
                         hackCollector.stop('failed');
                         await btnInteraction.update({
                             embeds: [
                                 new EmbedBuilder()
                                     .setTitle('🚨 ALARME SILENCIEUSE DÉCLENCHÉE !')
-                                    .setDescription('Mauvaise combinaison de fils coupés ! Les unités d\'intervention foncent sur zone ! (-25 % de succès)')
+                                    .setDescription(`Mauvaise séquence ! La patrouille a été prévenue ! (-${Math.round(hackRate * 100)} % de chances)`)
                                     .setColor(0xED4245),
                             ],
                             components: [],
@@ -262,21 +343,17 @@ module.exports = {
                     }
                 }
 
-                if (!hackSuccess && currentStep < sequenceLength) {
-                    hackBonus = -0.25;
+                if (!hackFinished && currentStep < seqLen) {
+                    hackBonus = -hackRate;
                 }
 
                 await new Promise(r => setTimeout(r, 2500));
             }
 
-            // Étape 4 : Résolution du braquage
+            // Calcul des bonus finaux
             const teamBonus = Math.min((team.length - 1) * 0.05, 0.20);
-            let itemBonus = 0;
-            if (selectedKey === 'epicerie' && team.some(m => db.getItemQuantity(m.id, 'crowbar') > 0)) {
-                itemBonus += 0.10;
-            }
-
-            const totalSuccessRate = Math.max(0.05, Math.min(target.successRate + teamBonus + itemBonus + hackBonus, 0.95));
+            const toolBonus = (toolUser && target.optionalItem) ? target.bonusRate : 0;
+            const totalSuccessRate = Math.max(0.05, Math.min(target.successRate + teamBonus + toolBonus + hackBonus, 0.95));
             const roll = Math.random();
 
             if (roll <= totalSuccessRate) {
@@ -286,21 +363,32 @@ module.exports = {
 
                 const winEmbed = new EmbedBuilder()
                     .setTitle('💰 Braquage réussi !')
-                    .setDescription(`Le gang s'est échappé de : **${target.name}** !\n\n💸 **Butin total :** ${totalLoot.toLocaleString('fr-FR')} $\n💵 **Part individuelle :** ${share.toLocaleString('fr-FR')} $ (${team.length} membres)`)
+                    .setDescription(`Le gang s'est échappé de : **${target.name}** !\n\n💸 **Butin total :** ${totalLoot.toLocaleString('fr-FR')} $\n💵 **Part individuelle :** ${share.toLocaleString('fr-FR')} $ (${team.length} membre(s))`)
                     .setColor(0x57F287);
 
                 await lobbyMsg.edit({ content: null, embeds: [winEmbed], components: [] });
             } else {
-                const outcomes = [];
+                const itemLossMessages = [];
 
+                if (toolUser && target.optionalItem) {
+                    db.consumeItem(toolUser.id, target.optionalItem);
+                    itemLossMessages.push(`💥 Le/La **${items[target.optionalItem].name}** de **${toolUser.username}** s'est brisé(e) pendant la fuite !`);
+                }
+
+                if (target.requires) {
+                    db.consumeItem(interaction.user.id, target.requires);
+                    itemLossMessages.push(`⚠️ Le matériel obligatoire (**${items[target.requires].name}**) du chef a été confisqué par la police !`);
+                }
+
+                const outcomes = [];
                 for (const member of team) {
                     if (db.consumeItem(member.id, 'vest')) {
-                        outcomes.push(`🛡️ **${member.username}** a esquivé la prison grâce à son gilet pare-balles (consommé) !`);
+                        outcomes.push(`🛡️ **${member.username}** a évité la prison grâce à son gilet pare-balles (consommé) !`);
                     } else {
                         let sentence = target.jailTime;
-                        if (db.getItemQuantity(member.id, 'lawyer') > 0) {
+                        if (db.hasActiveLawyer(member.id)) {
                             sentence = Math.max(1, Math.floor(sentence / 2));
-                            outcomes.push(`⚖️ **${member.username}** : ${sentence} min (peine réduite par son avocat)`);
+                            outcomes.push(`⚖️ **${member.username}** : ${sentence} min (peine réduite de moitié par son avocat)`);
                         } else {
                             outcomes.push(`🚨 **${member.username}** : ${sentence} min de cellule`);
                         }
@@ -310,7 +398,7 @@ module.exports = {
 
                 const failEmbed = new EmbedBuilder()
                     .setTitle('🚨 Échec du braquage !')
-                    .setDescription(`Le RAID et la police ont bouclé la zone à : **${target.name}** !\n\n${outcomes.join('\n')}`)
+                    .setDescription(`L'alarme a retenti et les forces de l'ordre ont coincé le gang à : **${target.name}** !\n\n${itemLossMessages.length > 0 ? itemLossMessages.join('\n') + '\n\n' : ''}${outcomes.join('\n')}`)
                     .setColor(0xED4245);
 
                 await lobbyMsg.edit({ content: null, embeds: [failEmbed], components: [] });
