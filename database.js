@@ -120,4 +120,13 @@ module.exports = {
       ON CONFLICT(userId) DO UPDATE SET availableAt = ?
     `).run(userId, until, until);
     },
+
+    getTopPlayers(limit = 10) {
+        return db.prepare(`
+      SELECT userId, cash, stash, (cash + stash) AS netWorth
+      FROM players
+      ORDER BY netWorth DESC
+      LIMIT ?
+    `).all(limit);
+    },
 };
