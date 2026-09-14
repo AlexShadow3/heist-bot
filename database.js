@@ -8,15 +8,10 @@ db.prepare(`
   CREATE TABLE IF NOT EXISTS players (
     userId TEXT PRIMARY KEY,
     cash INTEGER DEFAULT 500,
+    stash INTEGER DEFAULT 0,
     jailedUntil INTEGER DEFAULT 0
   )
 `).run();
-
-try {
-    db.prepare('ALTER TABLE players ADD COLUMN stash INTEGER DEFAULT 0').run();
-} catch {
-    // La colonne existe déjà, rien à faire
-}
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS inventory (
