@@ -1,12 +1,12 @@
 {
   "dependencies": {
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "discord.js": "^14.27.0"
   },
   "name": "heist-bot",
   "version": "1.0.0",
   "description": "",
   "main": "database.js",
-  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
