@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../database');
 
-const COOLDOWN_MINUTES = 5;
+const COOLDOWN_MINUTES = 60;
 const MIN_TARGET_CASH = 200;
 
 module.exports = {

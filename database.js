@@ -29,6 +29,13 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS escape_cooldowns (
+    userId TEXT PRIMARY KEY,
+    availableAt INTEGER DEFAULT 0
+  )
+`).run();
+
 module.exports = {
     getPlayer(userId) {
         let player = db.prepare('SELECT * FROM players WHERE userId = ?').get(userId);
@@ -114,6 +121,20 @@ module.exports = {
       VALUES (?, ?)
       ON CONFLICT(userId) DO UPDATE SET availableAt = ?
     `).run(userId, until, until);
+    },
+
+    getEscapeCooldown(userId) {
+        const row = db.prepare('SELECT availableAt FROM escape_cooldowns WHERE userId = ?').get(userId);
+        return row ? row.availableAt : 0;
+    },
+
+    setEscapeCooldown(userId, minutes) {
+        const until = Date.now() + minutes * 60 * 1000;
+        db.prepare(`
+            INSERT INTO escape_cooldowns (userId, availableAt)
+            VALUES (?, ?)
+            ON CONFLICT(userId) DO UPDATE SET availableAt = ?
+        `).run(userId, until, until);
     },
 
     getTopPlayers(limit = 10) {
