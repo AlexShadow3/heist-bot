@@ -1,0 +1,27 @@
+name: Deploy to Raspberry Pi
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Deploy updates
+        run: |
+          cd /home/cosmoss/Documents/heist-bot
+          git pull origin master
+          npm install --omit=dev
+          node deploy-commands.js
+
+          if pm2 describe heist-bot > /dev/null 2>&1; then
+            echo "Redémarrage du bot..."
+            pm2 restart heist-bot
+          else
+            echo "Premier démarrage du bot..."
+            pm2 start main.js --name "heist-bot"
+          fi
+
+          pm2 save

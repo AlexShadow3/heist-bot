@@ -1,0 +1,25 @@
+{
+  "dependencies": {
+    "better-sqlite3": "^13.0.3"
+  },
+  "name": "heist-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "database.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexShadow3/heist-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/AlexShadow3/heist-bot/issues"
+  },
+  "homepage": "https://github.com/AlexShadow3/heist-bot#readme"
+}
