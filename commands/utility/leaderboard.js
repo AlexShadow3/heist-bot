@@ -37,7 +37,11 @@ module.exports = {
                     username = `Criminel (${p.userId.slice(0, 5)}...)`;
                 }
 
-                return `${position} **${username}** — **${p.netWorth.toLocaleString('fr-FR')} $**\n> *${title}* (💵 ${p.cash} $ | 🔒 ${p.stash} $)`;
+                const total = p.heistsTotal || 0;
+                const won = p.heistsWon || 0;
+                const winRate = total > 0 ? Math.round((won / total) * 100) : 0;
+
+                return `${position} **${username}** — **${p.netWorth.toLocaleString('fr-FR')} $**\n> *${title}* (💵 ${p.cash.toLocaleString('fr-FR')} $ | 🔒 ${p.stash.toLocaleString('fr-FR')} $)\n> 🎯 Braquages : **${won}/${total}** réussis (${winRate} %)`;
             })
         );
 

@@ -261,6 +261,9 @@ module.exports = {
 
             // Mini-jeu de piratage si configuré sur la cible
             if (target.hack) {
+                // Sélection aléatoire d'un hacker parmi tous les membres du gang
+                const hacker = team[Math.floor(Math.random() * team.length)];
+
                 const { length: seqLen, time: hackTime, bonus: hackRate, title: hackTitle } = target.hack;
                 const sequence = Array.from({ length: seqLen }, () =>
                     HACK_KEYS[Math.floor(Math.random() * HACK_KEYS.length)]
@@ -279,12 +282,12 @@ module.exports = {
                 const hackRow = new ActionRowBuilder().addComponents(hackButtons);
                 const hackEmbed = new EmbedBuilder()
                     .setTitle(`💻 ${hackTitle}`)
-                    .setDescription(`**${interaction.user}**, pirate le boîtier !\nReproduis la séquence dans les **${hackTime / 1000} secondes** :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${Array(seqLen).fill('.').join(' ')} ]\``)
+                    .setDescription(`🎯 **Hacker désigné d'office :** ${hacker} !\n\nReproduis la séquence dans les **${hackTime / 1000} secondes** :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${Array(seqLen).fill('.').join(' ')} ]\``)
                     .setColor(0x3498DB)
-                    .setFooter({ text: 'Seul le leader peut manipuler le boîtier de piratage.' });
+                    .setFooter({ text: `Seul ${hacker.username} peut interagir avec ce boîtier !` });
 
                 await lobbyMsg.edit({
-                    content: '⚡ **PIRATAGE EN COURS...**',
+                    content: `⚡ **PIRATAGE EN COURS... C'est à ${hacker} de jouer !**`,
                     embeds: [hackEmbed],
                     components: [hackRow],
                 });
@@ -297,8 +300,12 @@ module.exports = {
                 let hackFinished = false;
 
                 for await (const [btnInteraction] of hackCollector[Symbol.asyncIterator]()) {
-                    if (btnInteraction.user.id !== interaction.user.id) {
-                        await btnInteraction.reply({ content: 'Seul le hacker en chef peut manipuler ce boîtier.', ephemeral: true });
+                    // Seul le hacker sélectionné aléatoirement a la main
+                    if (btnInteraction.user.id !== hacker.id) {
+                        await btnInteraction.reply({
+                            content: `⚠️ Pas touche ! Seul le hacker désigné (**${hacker.username}**) a les câbles en main !`,
+                            ephemeral: true,
+                        });
                         continue;
                     }
 
@@ -313,7 +320,7 @@ module.exports = {
                                 embeds: [
                                     new EmbedBuilder()
                                         .setTitle('🔓 SYSTÈMES DÉCONNECTÉS !')
-                                        .setDescription(`Sécurité neutralisée ! (+${Math.round(hackRate * 100)} % de chances)`)
+                                        .setDescription(`**${hacker.username}** a neutralisé la sécurité à temps ! (+${Math.round(hackRate * 100)} % de chances)`)
                                         .setColor(0x57F287),
                                 ],
                                 components: [],
@@ -321,7 +328,7 @@ module.exports = {
                             hackCollector.stop('completed');
                             break;
                         } else {
-                            hackEmbed.setDescription(`**${interaction.user}**, pirate le boîtier !\nSéquence :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${progress} ]\``);
+                            hackEmbed.setDescription(`🎯 **Hacker désigné :** ${hacker} !\n\nSéquence :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${progress} ]\``);
                             await btnInteraction.update({ embeds: [hackEmbed] });
                         }
                     } else {
@@ -332,7 +339,7 @@ module.exports = {
                             embeds: [
                                 new EmbedBuilder()
                                     .setTitle('🚨 ALARME SILENCIEUSE DÉCLENCHÉE !')
-                                    .setDescription(`Mauvaise séquence ! La patrouille a été prévenue ! (-${Math.round(hackRate * 100)} % de chances)`)
+                                    .setDescription(`Erreur critique de **${hacker.username}** ! Les sirènes hurlent ! (-${Math.round(hackRate * 100)} % de chances)`)
                                     .setColor(0xED4245),
                             ],
                             components: [],
@@ -357,7 +364,10 @@ module.exports = {
             if (roll <= totalSuccessRate) {
                 const totalLoot = Math.floor(Math.random() * (target.loot[1] - target.loot[0] + 1)) + target.loot[0];
                 const share = Math.floor(totalLoot / team.length);
-                team.forEach(m => db.addCash(m.id, share));
+                team.forEach(m => {
+                    db.addCash(m.id, share);
+                    db.recordHeistAttempt(m.id, true);
+                });
 
                 const winEmbed = new EmbedBuilder()
                     .setTitle('💰 Braquage réussi !')
@@ -367,6 +377,10 @@ module.exports = {
                 await lobbyMsg.edit({ content: null, embeds: [winEmbed], components: [] });
             } else {
                 const itemLossMessages = [];
+
+                team.forEach(m => {
+                    db.recordHeistAttempt(m.id, false);
+                });
 
                 if (toolUser && target.optionalItem) {
                     db.consumeItem(toolUser.id, target.optionalItem);
