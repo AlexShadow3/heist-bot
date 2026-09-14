@@ -21,7 +21,7 @@ module.exports = {
         id: 'lockpick_kit',
         name: 'Kit de crochetage pro',
         price: 1800,
-        description: '+15 % de réussite au Magasin de luxe si activé. Confisqué en cas d\'échec.',
+        description: 'Obligatoire pour braquer le Magasin de luxe. Confisqué en cas d\'échec.',
     },
     drill: {
         id: 'drill',
