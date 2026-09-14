@@ -20,8 +20,9 @@ module.exports = {
             .setTitle(`Profil de ${interaction.user.username}`)
             .setColor(jailed ? 0xED4245 : 0x57F287)
             .addFields(
-                { name: 'Cash', value: `${player.cash} $`, inline: true },
-                { name: 'Statut', value: jailed ? `En cellule (${minutesLeft} min)` : 'En liberté', inline: true },
+                { name: 'Portefeuille (Liquide)', value: `💰 **${player.cash} $** *(exposé au vol)*`, inline: true },
+                { name: 'Planque (Blanchi)', value: `🔒 **${player.stash} $** *(sécurisé)*`, inline: true },
+                { name: 'Statut', value: jailed ? `🚨 En cellule (${minutesLeft} min)` : '🟢 En liberté', inline: true },
                 { name: 'Équipements', value: inventoryText, inline: false },
             )
             .setThumbnail(interaction.user.displayAvatarURL());

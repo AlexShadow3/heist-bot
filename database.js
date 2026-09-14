@@ -12,12 +12,25 @@ db.prepare(`
   )
 `).run();
 
+try {
+    db.prepare('ALTER TABLE players ADD COLUMN stash INTEGER DEFAULT 0').run();
+} catch {
+    // La colonne existe déjà, rien à faire
+}
+
 db.prepare(`
   CREATE TABLE IF NOT EXISTS inventory (
     userId TEXT,
     itemId TEXT,
     quantity INTEGER DEFAULT 0,
     PRIMARY KEY (userId, itemId)
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS rob_cooldowns (
+    userId TEXT PRIMARY KEY,
+    availableAt INTEGER DEFAULT 0
   )
 `).run();
 
@@ -75,8 +88,6 @@ module.exports = {
         return false;
     },
 
-    // À ajouter dans les exports de database.js :
-
     releasePlayer(userId) {
         db.prepare('UPDATE players SET jailedUntil = 0 WHERE userId = ?').run(userId);
     },
@@ -86,5 +97,27 @@ module.exports = {
         const base = player.jailedUntil > Date.now() ? player.jailedUntil : Date.now();
         const newUntil = base + extraMinutes * 60 * 1000;
         db.prepare('UPDATE players SET jailedUntil = ? WHERE userId = ?').run(newUntil, userId);
+    },
+
+    transferCash(fromUserId, toUserId, amount) {
+        const transaction = db.transaction(() => {
+            db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(amount, fromUserId);
+            db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, toUserId);
+        });
+        transaction();
+    },
+
+    getRobCooldown(userId) {
+        const row = db.prepare('SELECT availableAt FROM rob_cooldowns WHERE userId = ?').get(userId);
+        return row ? row.availableAt : 0;
+    },
+
+    setRobCooldown(userId, minutes) {
+        const until = Date.now() + minutes * 60 * 1000;
+        db.prepare(`
+      INSERT INTO rob_cooldowns (userId, availableAt)
+      VALUES (?, ?)
+      ON CONFLICT(userId) DO UPDATE SET availableAt = ?
+    `).run(userId, until, until);
     },
 };
