@@ -58,7 +58,7 @@ const TARGETS = {
         hack: {
             title: 'SERVEUR MAINFRAME — BANQUE CENTRALE',
             length: 6,
-            time: 7_000,
+            time: 8_000,
             bonus: 0.25,
         },
     },

@@ -9,7 +9,9 @@ db.prepare(`
     userId TEXT PRIMARY KEY,
     cash INTEGER DEFAULT 500,
     stash INTEGER DEFAULT 0,
-    jailedUntil INTEGER DEFAULT 0
+    jailedUntil INTEGER DEFAULT 0,
+    heistsTotal INTEGER DEFAULT 0,
+    heistsWon INTEGER DEFAULT 0
   )
 `).run();
 
@@ -42,14 +44,6 @@ db.prepare(`
     expiresAt INTEGER DEFAULT 0
   )
 `).run();
-
-try {
-  db.prepare('ALTER TABLE players ADD COLUMN heistsTotal INTEGER DEFAULT 0').run();
-} catch { }
-
-try {
-  db.prepare('ALTER TABLE players ADD COLUMN heistsWon INTEGER DEFAULT 0').run();
-} catch { }
 
 module.exports = {
   getPlayer(userId) {
