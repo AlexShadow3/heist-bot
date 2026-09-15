@@ -202,4 +202,12 @@ module.exports = {
     LIMIT ?
   `).all(limit);
   },
+
+  getAllPlayers() {
+    return db.prepare(`
+      SELECT userId, cash, stash, (cash + stash) AS netWorth, heistsTotal, heistsWon
+      FROM players
+      ORDER BY netWorth DESC
+    `).all();
+  },
 };
