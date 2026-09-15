@@ -22,30 +22,36 @@ module.exports = {
 
         await interaction.deferReply();
 
-        // Récupération de tous les comptes enregistrés
         const allPlayers = db.getAllPlayers();
+        const topPlayers = [];
 
-        // Filtrage sur les membres présents dans le serveur
-        const serverMembers = await interaction.guild.members.fetch();
-        const filteredPlayers = allPlayers.filter(p => serverMembers.has(p.userId));
+        // On cherche les membres du serveur individuellement dans le cache ou via fetch ciblé
+        for (const player of allPlayers) {
+            if (topPlayers.length >= 10) break;
 
-        if (filteredPlayers.length === 0) {
-            return interaction.editReply('Aucun criminel de ce serveur n\'est enregistré pour le moment.');
+            try {
+                const member = await interaction.guild.members.fetch(player.userId);
+                if (member) {
+                    topPlayers.push({ ...player, displayName: member.displayName });
+                }
+            } catch {
+                // Le joueur n'est pas (ou plus) sur ce serveur, on l'ignore
+            }
         }
 
-        const topPlayers = filteredPlayers.slice(0, 10);
+        if (topPlayers.length === 0) {
+            return interaction.editReply("Aucun criminel de ce serveur n'est enregistré pour le moment.");
+        }
 
         const leaderboardLines = topPlayers.map((p, index) => {
             const position = index < 3 ? MEDALS[index] : `**#${index + 1}**`;
             const title = getCrimeTitle(p.netWorth);
-            const member = serverMembers.get(p.userId);
-            const username = member ? member.displayName : `Criminel (${p.userId.slice(0, 5)}...)`;
 
             const total = p.heistsTotal || 0;
             const won = p.heistsWon || 0;
             const winRate = total > 0 ? Math.round((won / total) * 100) : 0;
 
-            return `${position} **${username}** — **${p.netWorth.toLocaleString('fr-FR')} $**\n> *${title}* (💵 ${p.cash.toLocaleString('fr-FR')} $ | 🔒 ${p.stash.toLocaleString('fr-FR')} $)\n> 🎯 Braquages : **${won}/${total}** réussis (${winRate} %)`;
+            return `${position} **${p.displayName}** — **${p.netWorth.toLocaleString('fr-FR')} $**\n> *${title}* (💵 ${p.cash.toLocaleString('fr-FR')} $ | 🔒 ${p.stash.toLocaleString('fr-FR')} $)\n> 🎯 Braquages : **${won}/${total}** réussis (${winRate} %)`;
         });
 
         const embed = new EmbedBuilder()
