@@ -16,6 +16,13 @@ db.prepare(`
 `).run();
 
 db.prepare(`
+  CREATE TABLE IF NOT EXISTS police_vault (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    amount INTEGER DEFAULT 0
+  )
+`).run();
+
+db.prepare(`
   CREATE TABLE IF NOT EXISTS inventory (
     userId TEXT,
     itemId TEXT,
@@ -76,6 +83,49 @@ module.exports = {
       db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
     });
     transaction();
+  },
+
+  seizeFine(userId, targetFine) {
+    const player = this.getPlayer(userId);
+    let remainingToSeize = targetFine;
+    let takenFromStash = 0;
+    let takenFromCash = 0;
+
+    if (player.stash > 0) {
+      takenFromStash = Math.min(player.stash, remainingToSeize);
+      remainingToSeize -= takenFromStash;
+    }
+
+    if (remainingToSeize > 0 && player.cash > 0) {
+      takenFromCash = Math.min(player.cash, remainingToSeize);
+      remainingToSeize -= takenFromCash;
+    }
+
+    const totalSeized = takenFromStash + takenFromCash;
+
+    if (totalSeized > 0) {
+      const transaction = db.transaction(() => {
+        if (takenFromStash > 0) {
+          db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(takenFromStash, userId);
+        }
+        if (takenFromCash > 0) {
+          db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(takenFromCash, userId);
+        }
+        db.prepare('UPDATE police_vault SET amount = amount + ? WHERE id = 1').run(totalSeized);
+      });
+      transaction();
+    }
+
+    return { totalSeized, takenFromStash, takenFromCash };
+  },
+
+  getPoliceVault() {
+    const row = db.prepare('SELECT amount FROM police_vault WHERE id = 1').get();
+    return row ? row.amount : 10000;
+  },
+
+  takeFromPoliceVault(amount) {
+    db.prepare('UPDATE police_vault SET amount = MAX(0, amount - ?) WHERE id = 1').run(amount);
   },
 
   jailPlayer(userId, minutes) {

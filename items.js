@@ -29,6 +29,12 @@ module.exports = {
         price: 3500,
         description: 'Obligatoire pour braquer la Banque centrale. Détruite en cas d\'échec.',
     },
+    police_badge: {
+        id: 'police_badge',
+        name: 'Badge d\'accès corrompu',
+        price: 5000,
+        description: 'Obligatoire pour infiltrer le Coffre des forces de l\'ordre. Confisqué en cas d\'échec.',
+    },
     vest: {
         id: 'vest',
         name: 'Gilet pare-balles',
