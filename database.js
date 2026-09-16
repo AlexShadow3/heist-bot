@@ -23,6 +23,10 @@ db.prepare(`
 `).run();
 
 db.prepare(`
+  INSERT OR IGNORE INTO police_vault (id, amount) VALUES (1, 0)
+`).run();
+
+db.prepare(`
   CREATE TABLE IF NOT EXISTS inventory (
     userId TEXT,
     itemId TEXT,
