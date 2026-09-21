@@ -47,4 +47,34 @@ module.exports = {
         price: 1200,
         description: 'Valable 1 heure : divise par deux la durée de tes peines de prison.',
     },
+    key_bronze: {
+        id: 'key_bronze',
+        name: 'Clé en bronze',
+        price: 1500,
+        description: 'Multiplie par x2 les gains du casse. Consommée à la fin (succès ou échec).',
+    },
+    key_silver: {
+        id: 'key_silver',
+        name: 'Clé en argent',
+        price: 3500,
+        description: 'Multiplie par x3 les gains du casse. Consommée à la fin (succès ou échec).',
+    },
+    key_gold: {
+        id: 'key_gold',
+        name: 'Clé en or',
+        price: 8000,
+        description: 'Multiplie par x5 les gains du casse. Consommée à la fin (succès ou échec).',
+    },
+    key_diamond: {
+        id: 'key_diamond',
+        name: 'Clé en diamant',
+        price: 20000,
+        description: 'Multiplie par x10 les gains du casse. Consommée à la fin (succès ou échec).',
+    },
+    key_special: {
+        id: 'key_special',
+        name: 'Clé spéciale',
+        price: 12000,
+        description: 'Multiplie aléatoirement les gains (x2, x3, x5, x10 ou x20). Consommée à la fin (succès ou échec).',
+    },
 };
