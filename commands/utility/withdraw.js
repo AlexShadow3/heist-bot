@@ -12,6 +12,12 @@ module.exports = {
         .setMinValue(1)),
   async execute(interaction) {
     const player = db.getPlayer(interaction.user.id);
+    if (!db.getHideout(interaction.user.id)) {
+      return interaction.reply({
+        content: '❌ Tu n\'as pas de planque à gérer. Utilise `/buy-hideout`.',
+        ephemeral: true,
+      });
+    }
 
     if (db.isJailed(player)) {
       return interaction.reply({

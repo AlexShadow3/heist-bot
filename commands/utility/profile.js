@@ -9,6 +9,7 @@ module.exports = {
     async execute(interaction) {
         const player = db.getPlayer(interaction.user.id);
         const jailed = db.isJailed(player);
+        const hideout = db.getHideout(interaction.user.id);
         const minutesLeft = jailed ? Math.ceil((player.jailedUntil - Date.now()) / 60000) : 0;
 
         const userInventory = db.getUserInventory(interaction.user.id);
@@ -26,12 +27,16 @@ module.exports = {
         const won = player.heistsWon || 0;
         const winRate = total > 0 ? Math.round((won / total) * 100) : 0;
 
+        const hideoutText = hideout
+            ? `Niveau ${hideout.level}/10 — ${player.stash.toLocaleString('fr-FR')} $ / ${db.getHideoutLevel(hideout.level).capacity.toLocaleString('fr-FR')} $`
+            : 'Aucune planque — `/buy-hideout`';
+
         const embed = new EmbedBuilder()
             .setTitle(`Profil de ${interaction.user.username}`)
             .setColor(jailed ? 0xED4245 : 0x57F287)
             .addFields(
                 { name: 'Portefeuille (Liquide)', value: `💰 **${player.cash.toLocaleString('fr-FR')} $** *(exposé)*`, inline: true },
-                { name: 'Planque (Blanchi)', value: `🔒 **${player.stash.toLocaleString('fr-FR')} $** *(sécurisé)*`, inline: true },
+                { name: 'Planque (Blanchi)', value: `🔒 **${player.stash.toLocaleString('fr-FR')} $** *(sécurisé)*\n${hideoutText}`, inline: true },
                 { name: 'Statut', value: jailed ? `🚨 En cellule (${minutesLeft} min)` : '🟢 En liberté', inline: true },
                 { name: 'Braquages', value: `🎯 **${won}/${total}** réussis (${winRate} %)`, inline: false },
                 { name: 'Équipements & Services', value: inventoryText, inline: false },

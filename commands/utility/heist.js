@@ -552,13 +552,19 @@ module.exports = {
 
                 const baseSharePerMember = Math.floor(rawLoot / team.length);
                 const baselineLoot = baseSharePerMember > 0 ? baseSharePerMember : 500;
-                const finePerMember = Math.floor(baselineLoot * 0.50);
                 const seizureMessages = [];
 
                 team.forEach(member => {
+                    const baseFine = Math.floor(baselineLoot * 0.50);
+                    const protection = db.getHideoutProtection(member.id);
+                    const cameraReduction = protection.cameras * 0.02;
+                    const guardReduction = protection.guards > 0 ? 0.05 : 0;
+                    const finePerMember = Math.floor(baseFine * Math.max(0, 1 - cameraReduction - guardReduction));
+                    const guardUsed = protection.guards > 0 && db.consumeHideoutGuard(member.id);
                     const { totalSeized, takenFromStash, takenFromCash } = db.seizeFine(interaction.guildId, member.id, finePerMember);
                     if (totalSeized > 0) {
-                        seizureMessages.push(`💸 **${member.username}** : **${totalSeized.toLocaleString('fr-FR')} $** saisis *(🔒 ${takenFromStash.toLocaleString('fr-FR')} $ planque, 💵 ${takenFromCash.toLocaleString('fr-FR')} $ cash)*`);
+                        const protectionText = cameraReduction || guardUsed ? `, protection −${Math.round((cameraReduction + (guardUsed ? 0.05 : 0)) * 100)} %` : '';
+                        seizureMessages.push(`💸 **${member.username}** : **${totalSeized.toLocaleString('fr-FR')} $** saisis *(🔒 ${takenFromStash.toLocaleString('fr-FR')} $ planque, 💵 ${takenFromCash.toLocaleString('fr-FR')} $ cash${protectionText})*`);
                     } else {
                         seizureMessages.push(`💸 **${member.username}** : Insolvable, rien à saisir.`);
                     }

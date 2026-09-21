@@ -3,6 +3,27 @@ const path = require('node:path');
 
 const db = new Database(path.join(__dirname, 'data.db'));
 
+const HIDEOUT_LEVELS = [
+  { level: 1, price: 5000, capacity: 50000, rent: 500 },
+  { level: 2, price: 12000, capacity: 120000, rent: 1200 },
+  { level: 3, price: 25000, capacity: 250000, rent: 2500 },
+  { level: 4, price: 50000, capacity: 500000, rent: 5000 },
+  { level: 5, price: 100000, capacity: 1000000, rent: 10000 },
+  { level: 6, price: 150000, capacity: 1500000, rent: 15000 },
+  { level: 7, price: 200000, capacity: 2000000, rent: 20000 },
+  { level: 8, price: 300000, capacity: 3000000, rent: 30000 },
+  { level: 9, price: 400000, capacity: 4000000, rent: 40000 },
+  { level: 10, price: 500000, capacity: 5000000, rent: 50000 },
+];
+
+function getLatestMondayUtc(now = Date.now()) {
+  const date = new Date(now);
+  const day = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
 // Initialisation des tables
 db.prepare(`
   CREATE TABLE IF NOT EXISTS players (
@@ -14,6 +35,30 @@ db.prepare(`
     heistsWon INTEGER DEFAULT 0
   )
 `).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`).run();
+
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS hideouts (
+    userId TEXT PRIMARY KEY,
+    level INTEGER NOT NULL DEFAULT 1,
+    cameras INTEGER NOT NULL DEFAULT 0,
+    guards INTEGER NOT NULL DEFAULT 0,
+    lastWeeklyProcessed INTEGER NOT NULL DEFAULT 0
+  )
+`).run();
+
+if (!db.prepare("SELECT value FROM schema_meta WHERE key = 'stash_migrated'").get()) {
+  db.transaction(() => {
+    db.prepare('UPDATE players SET cash = cash + MAX(stash, 0), stash = 0 WHERE stash > 0').run();
+    db.prepare("INSERT INTO schema_meta (key, value) VALUES ('stash_migrated', '1')").run();
+  })();
+}
 
 const vaultTableInfo = db.prepare("PRAGMA table_info(police_vault)").all();
 const hasGuildId = vaultTableInfo.some(col => col.name === 'guildId');
@@ -84,24 +129,36 @@ module.exports = {
   },
 
   addCash(userId, amount) {
+    if (!Number.isInteger(amount) || amount < 0) throw new Error('Montant invalide');
     db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
   },
 
   depositToStash(userId, grossAmount, taxRate = 0.10) {
+    const player = this.getPlayer(userId);
+    const hideout = this.getHideout(userId);
+    if (!hideout) throw new Error('Aucune planque');
+    if (!Number.isInteger(grossAmount) || grossAmount <= 0 || player.cash < grossAmount) {
+      throw new Error('Fonds insuffisants');
+    }
     const fee = Math.floor(grossAmount * taxRate);
     const netAmount = grossAmount - fee;
+    const level = HIDEOUT_LEVELS[hideout.level - 1];
+    if (player.stash + netAmount > level.capacity) throw new Error('Capacité de planque dépassée');
     const transaction = db.transaction(() => {
-      db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(grossAmount, userId);
-      db.prepare('UPDATE players SET stash = stash + ? WHERE userId = ?').run(netAmount, userId);
+      const result = db.prepare('UPDATE players SET cash = cash - ?, stash = stash + ? WHERE userId = ? AND cash >= ? AND stash + ? <= ?')
+        .run(grossAmount, netAmount, userId, grossAmount, netAmount, level.capacity);
+      if (result.changes !== 1) throw new Error('Solde ou capacité insuffisante');
     });
     transaction();
     return { fee, netAmount };
   },
 
   withdrawFromStash(userId, amount) {
+    if (!Number.isInteger(amount) || amount <= 0) throw new Error('Montant invalide');
     const transaction = db.transaction(() => {
-      db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(amount, userId);
-      db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
+      const result = db.prepare('UPDATE players SET stash = stash - ?, cash = cash + ? WHERE userId = ? AND stash >= ?')
+        .run(amount, amount, userId, amount);
+      if (result.changes !== 1) throw new Error('Solde de planque insuffisant');
     });
     transaction();
   },
@@ -142,6 +199,103 @@ module.exports = {
     }
 
     return { totalSeized, takenFromStash, takenFromCash };
+  },
+
+  getHideout(userId) {
+    return db.prepare('SELECT * FROM hideouts WHERE userId = ?').get(userId) || null;
+  },
+
+  getHideoutLevel(level) {
+    return HIDEOUT_LEVELS[level - 1] || null;
+  },
+
+  buyHideout(userId) {
+    const level = HIDEOUT_LEVELS[0];
+    const transaction = db.transaction(() => {
+      const result = db.prepare(`
+        UPDATE players SET cash = cash - ?
+        WHERE userId = ? AND cash >= ?
+      `).run(level.price, userId, level.price);
+      if (result.changes !== 1) throw new Error('Fonds insuffisants');
+      if (this.getHideout(userId)) throw new Error('Une planque existe déjà');
+      db.prepare('INSERT INTO hideouts (userId, level, lastWeeklyProcessed) VALUES (?, 1, ?)')
+        .run(userId, getLatestMondayUtc());
+    });
+    transaction();
+  },
+
+  upgradeHideout(userId) {
+    const hideout = this.getHideout(userId);
+    if (!hideout) throw new Error('Aucune planque');
+    if (hideout.level >= HIDEOUT_LEVELS.length) throw new Error('Niveau maximum atteint');
+    const next = HIDEOUT_LEVELS[hideout.level];
+    const transaction = db.transaction(() => {
+      const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
+        .run(next.price, userId, next.price);
+      if (result.changes !== 1) throw new Error('Fonds insuffisants');
+      db.prepare('UPDATE hideouts SET level = level + 1 WHERE userId = ? AND level = ?')
+        .run(userId, hideout.level);
+    });
+    transaction();
+  },
+
+  buyHideoutCamera(userId) {
+    return this.buyHideoutProtection(userId, 'cameras', 25000, 3);
+  },
+
+  buyHideoutGuard(userId) {
+    return this.buyHideoutProtection(userId, 'guards', 40000, 3);
+  },
+
+  buyHideoutProtection(userId, column, price, max) {
+    const hideout = this.getHideout(userId);
+    if (!hideout) throw new Error('Aucune planque');
+    if (hideout[column] >= max) throw new Error('Maximum atteint');
+    const transaction = db.transaction(() => {
+      const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
+        .run(price, userId, price);
+      if (result.changes !== 1) throw new Error('Fonds insuffisants');
+      db.prepare(`UPDATE hideouts SET ${column} = ${column} + 1 WHERE userId = ? AND ${column} < ?`)
+        .run(userId, max);
+    });
+    transaction();
+  },
+
+  consumeHideoutGuard(userId) {
+    const result = db.prepare('UPDATE hideouts SET guards = guards - 1 WHERE userId = ? AND guards > 0').run(userId);
+    return result.changes === 1;
+  },
+
+  getHideoutProtection(userId) {
+    const hideout = this.getHideout(userId);
+    return hideout ? { cameras: hideout.cameras, guards: hideout.guards } : { cameras: 0, guards: 0 };
+  },
+
+  processWeeklySettlements(now = Date.now()) {
+    const latestMonday = getLatestMondayUtc(now);
+    const rows = db.prepare('SELECT * FROM hideouts WHERE lastWeeklyProcessed < ?').all(latestMonday);
+    for (const hideout of rows) {
+      db.transaction(() => {
+        let cursor = hideout.lastWeeklyProcessed || latestMonday;
+        while (cursor < latestMonday) {
+          const nextMonday = cursor + 7 * 24 * 60 * 60 * 1000;
+          const level = HIDEOUT_LEVELS[hideout.level - 1];
+          const player = db.prepare('SELECT cash, stash FROM players WHERE userId = ?').get(hideout.userId);
+          const paid = Math.min(player.cash, level.rent);
+          db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(paid, hideout.userId);
+          if (paid === level.rent && hideout.level >= 6) {
+            const rate = 1 + (hideout.level - 6) * 0.25;
+            const income = Math.floor(level.capacity * rate / 100);
+            db.prepare('UPDATE players SET stash = MIN(?, stash + ?) WHERE userId = ?')
+              .run(level.capacity, income, hideout.userId);
+          }
+          cursor = nextMonday;
+        }
+        db.prepare('UPDATE hideouts SET lastWeeklyProcessed = ? WHERE userId = ?')
+          .run(latestMonday, hideout.userId);
+      })();
+    }
+    return rows.length;
   },
 
   getPoliceVault(guildId) {
@@ -190,7 +344,9 @@ module.exports = {
 
   buyItem(userId, itemId, price) {
     const transaction = db.transaction(() => {
-      db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(price, userId);
+      const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
+        .run(price, userId, price);
+      if (result.changes !== 1) throw new Error('Fonds insuffisants');
 
       if (itemId === 'lawyer') {
         const row = db.prepare('SELECT expiresAt FROM lawyer_services WHERE userId = ?').get(userId);
@@ -233,7 +389,9 @@ module.exports = {
 
   transferCash(fromUserId, toUserId, amount) {
     const transaction = db.transaction(() => {
-      db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(amount, fromUserId);
+      const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
+        .run(amount, fromUserId, amount);
+      if (result.changes !== 1) throw new Error('Fonds insuffisants');
       db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, toUserId);
     });
     transaction();

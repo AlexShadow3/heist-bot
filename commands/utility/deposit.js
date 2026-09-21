@@ -12,6 +12,14 @@ module.exports = {
                 .setMinValue(10)),
     async execute(interaction) {
         const player = db.getPlayer(interaction.user.id);
+        const hideout = db.getHideout(interaction.user.id);
+
+        if (!hideout) {
+            return interaction.reply({
+                content: '❌ Tu dois d\'abord acheter une planque avec `/buy-hideout`.',
+                ephemeral: true,
+            });
+        }
 
         if (db.isJailed(player)) {
             return interaction.reply({
@@ -29,7 +37,17 @@ module.exports = {
             });
         }
 
-        const { fee, netAmount } = db.depositToStash(interaction.user.id, amount);
+        const level = db.getHideoutLevel(hideout.level);
+        const fee = Math.floor(amount * 0.10);
+        const netAmount = amount - fee;
+        if (player.stash + netAmount > level.capacity) {
+            return interaction.reply({
+                content: `❌ Ce dépôt dépasserait la capacité de ta planque (${level.capacity.toLocaleString('fr-FR')} $).`,
+                ephemeral: true,
+            });
+        }
+
+        db.depositToStash(interaction.user.id, amount);
 
         const embed = new EmbedBuilder()
             .setTitle('🧼 Blanchiment d\'argent terminé')
