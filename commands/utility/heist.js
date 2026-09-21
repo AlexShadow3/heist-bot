@@ -184,18 +184,9 @@ module.exports = {
                     time: 30_000,
                 });
                 policeApproach = approachInteraction.values[0];
-                await approachInteraction.update({
-                    content: '✅ Approche validée. Les préparatifs commencent dans le salon.',
-                    components: [],
-                });
             } catch {
                 return interaction.editReply({ content: 'Temps écoulé, plan annulé.', components: [] });
             }
-        } else {
-            await interaction.editReply({
-                content: '✅ Cible sélectionnée. Les préparatifs commencent dans le salon.',
-                components: [],
-            });
         }
 
         let team = [interaction.user];
