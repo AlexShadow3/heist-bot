@@ -111,6 +111,16 @@ db.prepare(`
   )
 `).run();
 
+// Nouvelle table pour les cooldowns spécifiques aux cibles de braquages
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS heist_cooldowns (
+    userId TEXT,
+    targetId TEXT,
+    availableAt INTEGER,
+    PRIMARY KEY (userId, targetId)
+  )
+`).run();
+
 db.prepare(`
   CREATE TABLE IF NOT EXISTS lawyer_services (
     userId TEXT PRIMARY KEY,
@@ -226,7 +236,7 @@ module.exports = {
       if (result.changes !== 1) throw new Error('Fonds insuffisants');
       if (this.getHideout(userId)) throw new Error('Une planque existe déjà');
       db.prepare('INSERT INTO hideouts (userId, level, lastWeeklyProcessed) VALUES (?, 1, ?)')
-        .run(userId, getLatestMondayUtc());
+        .run(userId, 1, getLatestMondayUtc());
     });
     transaction();
   },
@@ -262,7 +272,7 @@ module.exports = {
       const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
         .run(price, userId, price);
       if (result.changes !== 1) throw new Error('Fonds insuffisants');
-      db.prepare(`UPDATE hideouts SET ${column} = ${column} + 1 WHERE userId = ? AND ${column} < ?`)
+      db.prepare(`UPDATE hideouts SET ${column} =${column} + 1 WHERE userId = ? AND ${column} < ?`)
         .run(userId, max);
     });
     transaction();
@@ -283,7 +293,6 @@ module.exports = {
     const rows = db.prepare('SELECT * FROM hideouts WHERE lastWeeklyProcessed < ?').all(latestMonday);
     for (const hideout of rows) {
       db.transaction(() => {
-        // Legacy rows with no marker are initialized now, without charging years of rent.
         let cursor = hideout.lastWeeklyProcessed > 0 ? hideout.lastWeeklyProcessed : latestMonday;
         while (cursor < latestMonday) {
           const nextMonday = cursor + 7 * 24 * 60 * 60 * 1000;
@@ -359,7 +368,7 @@ module.exports = {
       if (itemId === 'lawyer') {
         const row = db.prepare('SELECT expiresAt FROM lawyer_services WHERE userId = ?').get(userId);
         const currentExp = row && row.expiresAt > Date.now() ? row.expiresAt : Date.now();
-        const newExp = currentExp + 60 * 60 * 1000; // +1 heure
+        const newExp = currentExp + 60 * 60 * 1000;
         db.prepare(`
           INSERT INTO lawyer_services (userId, expiresAt)
           VALUES (?, ?)
@@ -431,6 +440,21 @@ module.exports = {
       VALUES (?, ?)
       ON CONFLICT(userId) DO UPDATE SET availableAt = ?
     `).run(userId, until, until);
+  },
+
+  // Nouvelles fonctions pour les cooldowns de braquages
+  getHeistCooldown(userId, targetId) {
+    const row = db.prepare('SELECT availableAt FROM heist_cooldowns WHERE userId = ? AND targetId = ?').get(userId, targetId);
+    return row ? row.availableAt : 0;
+  },
+
+  setHeistCooldown(userId, targetId, minutes) {
+    const until = Date.now() + minutes * 60 * 1000;
+    db.prepare(`
+      INSERT INTO heist_cooldowns (userId, targetId, availableAt)
+      VALUES (?, ?, ?)
+      ON CONFLICT(userId, targetId) DO UPDATE SET availableAt = ?
+    `).run(userId, targetId, until, until);
   },
 
   recordHeistAttempt(userId, success = false) {
