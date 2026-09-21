@@ -150,51 +150,16 @@ module.exports = {
 
         if (target.requires && db.getItemQuantity(interaction.user.id, target.requires) < 1) {
             const reqName = items[target.requires]?.name || target.requires;
-            return interaction.editReply({
+            return interaction.followUp({
                 content: `❌ Tu n'as pas l'équipement requis (**${reqName}**) pour lancer ce braquage ! Passe par le \`/shop\`.`,
-                components: [],
+                ephemeral: true,
             });
-        }
-
-        let policeApproach = 'part';
-        if (target.isPoliceVault) {
-            const approachMenu = new StringSelectMenuBuilder()
-                .setCustomId('select_approach')
-                .setPlaceholder('Choisis ton niveau de cupidité')
-                .addOptions([
-                    {
-                        label: 'Petite part (20 % du coffre)',
-                        description: `Butin : ~${Math.floor(currentVault * 0.2).toLocaleString('fr-FR')} $ | 20 % base (30 % si hack réussi)`,
-                        value: 'part',
-                    },
-                    {
-                        label: 'Totalité du coffre (100 %)',
-                        description: `Butin : ${currentVault.toLocaleString('fr-FR')} $ | 2 % base (4 % si hack réussi)`,
-                        value: 'full',
-                    },
-                ]);
-
-            const approachRow = new ActionRowBuilder().addComponents(approachMenu);
-            await interaction.editReply({
-                content: `👮‍♂️ **Cible : Coffre des forces de l'ordre (${currentVault.toLocaleString('fr-FR')} $ saisis en réserve)**\nQuelle approche veux-tu tenter ?`,
-                components: [approachRow],
-            });
-
-            try {
-                const approachInteraction = await initialMsg.awaitMessageComponent({
-                    componentType: ComponentType.StringSelect,
-                    time: 30_000,
-                });
-                policeApproach = approachInteraction.values[0];
-            } catch {
-                return interaction.editReply({ content: 'Temps écoulé, plan annulé.', components: [] });
-            }
         }
 
         let team = [interaction.user];
         let isCancelled = false;
         let toolUser = null;
-        let keyCommitment = null; // { user: User, itemId: string }
+        let keyCommitment = null;
 
         const joinBtn = new ButtonBuilder()
             .setCustomId('join_heist')
@@ -242,7 +207,7 @@ module.exports = {
 
             let extraInfo = '';
             if (target.isPoliceVault) {
-                extraInfo = `\n🎯 **Approche :** ${policeApproach === 'full' ? 'Tout ou rien (100 % du coffre)' : 'Discrète (20 % du coffre)'}`;
+                extraInfo = `\n🎲 **Objectif :** Infiltration de la salle des scellés (butin tiré au sort : 20 % ou rafle totale 100 %)`;
             }
 
             return new EmbedBuilder()
@@ -390,6 +355,12 @@ module.exports = {
         lobbyCollector.on('end', async () => {
             if (isCancelled) return;
 
+            // Tirage au sort de l'opportunité pour le coffre de police : 15 % de chances de toucher le jackpot (100 %)
+            let isFullVault = false;
+            if (target.isPoliceVault) {
+                isFullVault = Math.random() <= 0.15;
+            }
+
             let hackBonus = 0;
 
             if (target.hack) {
@@ -398,7 +369,7 @@ module.exports = {
 
                 let hackRate = target.hack.bonus || 0;
                 if (target.isPoliceVault) {
-                    hackRate = policeApproach === 'full' ? 0.02 : 0.10;
+                    hackRate = isFullVault ? 0.05 : 0.10;
                 }
 
                 const sequence = Array.from({ length: seqLen }, () =>
@@ -490,7 +461,7 @@ module.exports = {
                 await new Promise(r => setTimeout(r, 2500));
             }
 
-            // Consommation systématique de la clé engagée (succès ou échec)
+            // Consommation systématique de la clé engagée
             let keyMultiplier = 1;
             let keyConsumedText = '';
             if (keyCommitment) {
@@ -510,15 +481,18 @@ module.exports = {
 
             let baseRate = target.successRate;
             let rawLoot = 0;
+            let vaultDetailsText = '';
 
             if (target.isPoliceVault) {
                 const currentTotal = db.getPoliceVault(interaction.guildId);
-                if (policeApproach === 'full') {
-                    baseRate = 0.02;
+                if (isFullVault) {
+                    baseRate = 0.05; // 5 % de base (+5 % avec hack = 10 %)
                     rawLoot = currentTotal;
+                    vaultDetailsText = `🚨 **JACKPOT DÉCLENCHÉ :** Vous avez forcé le compartiment principal (**100 % du coffre**) !`;
                 } else {
-                    baseRate = 0.20;
+                    baseRate = 0.20; // 20 % de base (+10 % avec hack = 30 %)
                     rawLoot = Math.floor(currentTotal * 0.20);
+                    vaultDetailsText = `💼 **INFILTRATION DISCRÈTE :** Vous avez accédé au casier secondaire (**20 % du coffre**) !`;
                 }
             } else {
                 rawLoot = Math.floor(Math.random() * (target.loot[1] - target.loot[0] + 1)) + target.loot[0];
@@ -541,7 +515,6 @@ module.exports = {
                 });
 
                 if (target.isPoliceVault) {
-                    // On retire au coffre le butin de base (non démultiplié par la clé pour éviter de rendre le coffre négatif)
                     db.takeFromPoliceVault(interaction.guildId, rawLoot);
                 }
 
@@ -549,6 +522,7 @@ module.exports = {
                     .setTitle('💰 Braquage réussi !')
                     .setDescription(
                         `Le gang s'est échappé de : **${target.name}** !\n\n` +
+                        (vaultDetailsText ? `${vaultDetailsText}\n\n` : '') +
                         (keyConsumedText ? `${keyConsumedText}\n\n` : '') +
                         `💸 **Butin total :** ${calculatedTotalLoot.toLocaleString('fr-FR')} $` +
                         (keyMultiplier > 1 ? ` *(x${keyMultiplier} appliqué !)*` : '') +
@@ -576,7 +550,6 @@ module.exports = {
                     itemLossMessages.push(`⚠️ Le matériel obligatoire (**${items[target.requires].name}**) du chef a été confisqué par la police !`);
                 }
 
-                // L'amende est basée sur la part de base sans multiplicateur de clé
                 const baseSharePerMember = Math.floor(rawLoot / team.length);
                 const baselineLoot = baseSharePerMember > 0 ? baseSharePerMember : 500;
                 const finePerMember = Math.floor(baselineLoot * 0.50);
@@ -609,7 +582,13 @@ module.exports = {
 
                 const failEmbed = new EmbedBuilder()
                     .setTitle('🚨 Échec du braquage !')
-                    .setDescription(`L'alarme a retenti et les forces de l'ordre ont coincé le gang à : **${target.name}** !\n\n${itemLossMessages.length > 0 ? itemLossMessages.join('\n') + '\n\n' : ''}**⚖️ Saisies policières (versées au coffre des flics) :**\n${seizureMessages.join('\n')}\n\n**⛓️ Peines de prison :**\n${outcomes.join('\n')}`)
+                    .setDescription(
+                        `L'alarme a retenti et les forces de l'ordre ont coincé le gang à : **${target.name}** !\n\n` +
+                        (vaultDetailsText ? `${vaultDetailsText}\n\n` : '') +
+                        `${itemLossMessages.length > 0 ? itemLossMessages.join('\n') + '\n\n' : ''}` +
+                        `**⚖️ Saisies policières (versées au coffre des flics) :**\n${seizureMessages.join('\n')}\n\n` +
+                        `**⛓️ Peines de prison :**\n${outcomes.join('\n')}`
+                    )
                     .setColor(0xED4245);
 
                 await lobbyMsg.edit({ content: null, embeds: [failEmbed], components: [] });
