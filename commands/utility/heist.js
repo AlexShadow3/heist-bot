@@ -76,7 +76,7 @@ const TARGETS = {
         hack: {
             title: 'SALLE DES SCIELLÉS & PREUVES — QG DE POLICE',
             length: 10,
-            time: 17_000,
+            time: 18_000,
         },
     },
 };
@@ -93,6 +93,13 @@ module.exports = {
         .setName('heist')
         .setDescription('Organise un braquage en équipe avec mini-jeux tactiques.'),
     async execute(interaction) {
+        if (!interaction.guildId) {
+            return interaction.reply({
+                content: 'Cette commande ne peut être exécutée que dans un serveur.',
+                ephemeral: true,
+            });
+        }
+
         const leader = db.getPlayer(interaction.user.id);
         if (db.isJailed(leader)) {
             const remaining = Math.ceil((leader.jailedUntil - Date.now()) / 60000);
@@ -102,7 +109,7 @@ module.exports = {
             });
         }
 
-        const currentVault = db.getPoliceVault();
+        const currentVault = db.getPoliceVault(interaction.guildId);
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('select_target')
@@ -325,12 +332,10 @@ module.exports = {
 
             let hackBonus = 0;
 
-            // Mini-jeu de piratage avec sélection aléatoire du membre
             if (target.hack) {
                 const hacker = team[Math.floor(Math.random() * team.length)];
                 const { length: seqLen, time: hackTime, title: hackTitle } = target.hack;
 
-                // Détermination du bonus de hack selon la cible et l'approche
                 let hackRate = target.hack.bonus || 0;
                 if (target.isPoliceVault) {
                     hackRate = policeApproach === 'full' ? 0.02 : 0.10;
@@ -425,17 +430,16 @@ module.exports = {
                 await new Promise(r => setTimeout(r, 2500));
             }
 
-            // Calcul des taux et des parts
             let baseRate = target.successRate;
             let calculatedTotalLoot = 0;
 
             if (target.isPoliceVault) {
-                const currentTotal = db.getPoliceVault();
+                const currentTotal = db.getPoliceVault(interaction.guildId);
                 if (policeApproach === 'full') {
-                    baseRate = 0.02; // 2 % de base (4 % avec hack réussi)
+                    baseRate = 0.02;
                     calculatedTotalLoot = currentTotal;
                 } else {
-                    baseRate = 0.20; // 20 % de base (30 % avec hack réussi)
+                    baseRate = 0.20;
                     calculatedTotalLoot = Math.floor(currentTotal * 0.20);
                 }
             } else {
@@ -457,7 +461,7 @@ module.exports = {
                 });
 
                 if (target.isPoliceVault) {
-                    db.takeFromPoliceVault(calculatedTotalLoot);
+                    db.takeFromPoliceVault(interaction.guildId, calculatedTotalLoot);
                 }
 
                 const winEmbed = new EmbedBuilder()
@@ -481,13 +485,12 @@ module.exports = {
                     itemLossMessages.push(`⚠️ Le matériel obligatoire (**${items[target.requires].name}**) du chef a été confisqué par la police !`);
                 }
 
-                // Saisie de 50 % de la part théorique (minimum 100 $ si le butin calculé était vide)
                 const baselineLoot = calculatedTotalLoot > 0 ? expectedSharePerMember : 500;
                 const finePerMember = Math.floor(baselineLoot * 0.50);
                 const seizureMessages = [];
 
                 team.forEach(member => {
-                    const { totalSeized, takenFromStash, takenFromCash } = db.seizeFine(member.id, finePerMember);
+                    const { totalSeized, takenFromStash, takenFromCash } = db.seizeFine(interaction.guildId, member.id, finePerMember);
                     if (totalSeized > 0) {
                         seizureMessages.push(`💸 **${member.username}** : **${totalSeized.toLocaleString('fr-FR')} $** saisis *(🔒 ${takenFromStash.toLocaleString('fr-FR')} $ planque, 💵 ${takenFromCash.toLocaleString('fr-FR')} $ cash)*`);
                     } else {

@@ -15,16 +15,33 @@ db.prepare(`
   )
 `).run();
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS police_vault (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    amount INTEGER DEFAULT 0
-  )
-`).run();
+const vaultTableInfo = db.prepare("PRAGMA table_info(police_vault)").all();
+const hasGuildId = vaultTableInfo.some(col => col.name === 'guildId');
 
-db.prepare(`
-  INSERT OR IGNORE INTO police_vault (id, amount) VALUES (1, 0)
-`).run();
+if (vaultTableInfo.length > 0 && !hasGuildId) {
+  const oldRow = db.prepare("SELECT amount FROM police_vault WHERE id = 1").get();
+  const migratedAmount = oldRow ? oldRow.amount : 0;
+
+  db.prepare("DROP TABLE police_vault").run();
+  db.prepare(`
+    CREATE TABLE police_vault (
+      guildId TEXT PRIMARY KEY,
+      amount INTEGER DEFAULT 0
+    )
+  `).run();
+
+  db.prepare(`
+    INSERT INTO police_vault (guildId, amount)
+    VALUES (?, ?)
+  `).run('1469430262789312635', migratedAmount);
+} else if (vaultTableInfo.length === 0) {
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS police_vault (
+      guildId TEXT PRIMARY KEY,
+      amount INTEGER DEFAULT 0
+    )
+  `).run();
+}
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS inventory (
@@ -89,7 +106,7 @@ module.exports = {
     transaction();
   },
 
-  seizeFine(userId, targetFine) {
+  seizeFine(guildId, userId, targetFine) {
     const player = this.getPlayer(userId);
     let remainingToSeize = targetFine;
     let takenFromStash = 0;
@@ -107,7 +124,7 @@ module.exports = {
 
     const totalSeized = takenFromStash + takenFromCash;
 
-    if (totalSeized > 0) {
+    if (totalSeized > 0 && guildId) {
       const transaction = db.transaction(() => {
         if (takenFromStash > 0) {
           db.prepare('UPDATE players SET stash = stash - ? WHERE userId = ?').run(takenFromStash, userId);
@@ -115,7 +132,11 @@ module.exports = {
         if (takenFromCash > 0) {
           db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ?').run(takenFromCash, userId);
         }
-        db.prepare('UPDATE police_vault SET amount = amount + ? WHERE id = 1').run(totalSeized);
+        db.prepare(`
+          INSERT INTO police_vault (guildId, amount)
+          VALUES (?, ?)
+          ON CONFLICT(guildId) DO UPDATE SET amount = amount + ?
+        `).run(guildId, totalSeized, totalSeized);
       });
       transaction();
     }
@@ -123,13 +144,19 @@ module.exports = {
     return { totalSeized, takenFromStash, takenFromCash };
   },
 
-  getPoliceVault() {
-    const row = db.prepare('SELECT amount FROM police_vault WHERE id = 1').get();
-    return row ? row.amount : 10000;
+  getPoliceVault(guildId) {
+    if (!guildId) return 0;
+    const row = db.prepare('SELECT amount FROM police_vault WHERE guildId = ?').get(guildId);
+    return row ? row.amount : 0;
   },
 
-  takeFromPoliceVault(amount) {
-    db.prepare('UPDATE police_vault SET amount = MAX(0, amount - ?) WHERE id = 1').run(amount);
+  takeFromPoliceVault(guildId, amount) {
+    if (!guildId) return;
+    db.prepare(`
+      INSERT INTO police_vault (guildId, amount)
+      VALUES (?, 0)
+      ON CONFLICT(guildId) DO UPDATE SET amount = MAX(0, amount - ?)
+    `).run(guildId, amount);
   },
 
   jailPlayer(userId, minutes) {
@@ -246,15 +273,6 @@ module.exports = {
     } else {
       db.prepare('UPDATE players SET heistsTotal = heistsTotal + 1 WHERE userId = ?').run(userId);
     }
-  },
-
-  getTopPlayers(limit = 10) {
-    return db.prepare(`
-    SELECT userId, cash, stash, (cash + stash) AS netWorth, heistsTotal, heistsWon
-    FROM players
-    ORDER BY netWorth DESC
-    LIMIT ?
-  `).all(limit);
   },
 
   getAllPlayers() {
