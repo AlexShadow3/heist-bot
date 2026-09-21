@@ -133,6 +133,13 @@ module.exports = {
     db.prepare('UPDATE players SET cash = cash + ? WHERE userId = ?').run(amount, userId);
   },
 
+  debitCash(userId, amount) {
+    if (!Number.isInteger(amount) || amount <= 0) throw new Error('Montant invalide');
+    const result = db.prepare('UPDATE players SET cash = cash - ? WHERE userId = ? AND cash >= ?')
+      .run(amount, userId, amount);
+    if (result.changes !== 1) throw new Error('Fonds insuffisants');
+  },
+
   depositToStash(userId, grossAmount, taxRate = 0.10) {
     const player = this.getPlayer(userId);
     const hideout = this.getHideout(userId);
@@ -276,7 +283,8 @@ module.exports = {
     const rows = db.prepare('SELECT * FROM hideouts WHERE lastWeeklyProcessed < ?').all(latestMonday);
     for (const hideout of rows) {
       db.transaction(() => {
-        let cursor = hideout.lastWeeklyProcessed || latestMonday;
+        // Legacy rows with no marker are initialized now, without charging years of rent.
+        let cursor = hideout.lastWeeklyProcessed > 0 ? hideout.lastWeeklyProcessed : latestMonday;
         while (cursor < latestMonday) {
           const nextMonday = cursor + 7 * 24 * 60 * 60 * 1000;
           const level = HIDEOUT_LEVELS[hideout.level - 1];

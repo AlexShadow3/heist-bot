@@ -44,7 +44,7 @@ module.exports = {
             });
         }
 
-        db.addCash(interaction.user.id, -BAIL_COST);
+        db.debitCash(interaction.user.id, BAIL_COST);
         db.releasePlayer(targetUser.id);
 
         const embed = new EmbedBuilder()
