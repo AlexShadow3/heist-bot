@@ -3,15 +3,15 @@ const baseItems = require('./items');
 const fr = require('./locales/fr');
 const en = require('./locales/en');
 
-const locales = { fr, en };
+const locales = { en, fr };
 
 function getLanguage(guildId) {
-    if (!guildId) return 'fr';
-    return db.getGuildLanguage(guildId) || 'fr';
+    if (!guildId) return 'en';
+    return db.getGuildLanguage(guildId) || 'en';
 }
 
 function resolveLang(guildIdOrLang) {
-    if (!guildIdOrLang) return 'fr';
+    if (!guildIdOrLang) return 'en';
     if (guildIdOrLang === 'fr' || guildIdOrLang === 'en') return guildIdOrLang;
     return getLanguage(guildIdOrLang);
 }
@@ -31,7 +31,12 @@ function t(guildIdOrLang, key, params = {}) {
     const lang = resolveLang(guildIdOrLang);
     let str = getNestedValue(locales[lang], key);
 
-    // Fallback sur le français si la clé est manquante
+    // Fallback sur l'anglais si la clé est manquante dans la locale choisie
+    if (str === undefined && lang !== 'en') {
+        str = getNestedValue(locales.en, key);
+    }
+
+    // Dernier recours : fallback sur le français si manquant en anglais
     if (str === undefined && lang !== 'fr') {
         str = getNestedValue(locales.fr, key);
     }
@@ -54,7 +59,7 @@ function t(guildIdOrLang, key, params = {}) {
 
 function formatNumber(number, guildIdOrLang) {
     const lang = resolveLang(guildIdOrLang);
-    const localeCode = lang === 'en' ? 'en-US' : 'fr-FR';
+    const localeCode = lang === 'fr' ? 'fr-FR' : 'en-US';
     return Number(number || 0).toLocaleString(localeCode);
 }
 
@@ -62,7 +67,7 @@ function getItem(itemId, guildIdOrLang) {
     const lang = resolveLang(guildIdOrLang);
     const base = baseItems[itemId];
     if (!base) return null;
-    const locItem = locales[lang]?.items?.[itemId] || locales.fr.items?.[itemId] || {};
+    const locItem = locales[lang]?.items?.[itemId] || locales.en?.items?.[itemId] || locales.fr?.items?.[itemId] || {};
     return {
         ...base,
         name: locItem.name || base.name,

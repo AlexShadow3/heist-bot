@@ -5,7 +5,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('deposit')
-        .setDescription('Blanchis ton argent liquide pour le sécuriser dans ta planque (frais : 10 %).')
+        .setDescription('Launder your cash to secure it in your hideout (fee: 10%).')
         .setDescriptionLocalizations({
             'fr': 'Blanchis ton argent liquide pour le sécuriser dans ta planque (frais : 10 %).',
             'en-US': 'Launder your cash to secure it in your hideout (fee: 10%).',

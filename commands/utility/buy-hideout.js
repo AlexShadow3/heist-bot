@@ -7,7 +7,7 @@ const LEVEL_ONE = db.getHideoutLevel(1);
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('buy-hideout')
-        .setDescription('Achète ta première planque secrète.')
+        .setDescription('Purchase your first secret hideout.')
         .setDescriptionLocalizations({
             'fr': 'Achète ta première planque secrète.',
             'en-US': 'Purchase your first secret hideout.',

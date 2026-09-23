@@ -8,7 +8,7 @@ const MIN_TARGET_CASH = 200;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('rob')
-        .setDescription('Tente de détrousser un autre joueur du serveur.')
+        .setDescription('Attempt to mug another player on the server.')
         .setDescriptionLocalizations({
             'fr': 'Tente de détrousser un autre joueur du serveur.',
             'en-US': 'Attempt to mug another player on the server.',

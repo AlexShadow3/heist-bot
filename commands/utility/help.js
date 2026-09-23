@@ -4,7 +4,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('help')
-        .setDescription('Affiche la liste complète des commandes du syndicat et leurs explications.')
+        .setDescription('Displays the complete list of syndicate commands and their descriptions.')
         .setDescriptionLocalizations({
             'fr': 'Affiche la liste complète des commandes du syndicat et leurs explications.',
             'en-US': 'Displays the complete list of syndicate commands and their descriptions.',

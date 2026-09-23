@@ -101,7 +101,7 @@ function getTargetInfo(key, guildId, vaultAmount = 0) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('heist')
-        .setDescription('Organise un braquage en équipe avec mini-jeux tactiques.')
+        .setDescription('Organize a team heist with tactical mini-games.')
         .setDescriptionLocalizations({
             'fr': 'Organise un braquage en équipe avec mini-jeux tactiques.',
             'en-US': 'Organize a team heist with tactical mini-games.',
@@ -110,7 +110,7 @@ module.exports = {
     async execute(interaction) {
         if (!interaction.guildId) {
             return interaction.reply({
-                content: i18n.t('fr', 'common.guildOnly'),
+                content: i18n.t('en', 'common.guildOnly'),
                 ephemeral: true,
             });
         }

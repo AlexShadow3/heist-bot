@@ -7,7 +7,7 @@ const ESCAPE_FAIL_COOLDOWN_MINUTES = 5;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('escape')
-        .setDescription("Tente de t'évader de ta cellule de prison.")
+        .setDescription('Attempt to escape from your prison cell.')
         .setDescriptionLocalizations({
             'fr': "Tente de t'évader de ta cellule de prison.",
             'en-US': 'Attempt to escape from your prison cell.',

@@ -7,7 +7,7 @@ const BAIL_COST = 350;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('bail')
-        .setDescription('Paye la caution d\'un complice en cellule.')
+        .setDescription('Pay bail for an accomplice in jail.')
         .setDescriptionLocalizations({
             'fr': 'Paye la caution d\'un complice en cellule.',
             'en-US': 'Pay bail for an accomplice in jail.',

@@ -15,7 +15,7 @@ const MEDALS = ['🥇', '🥈', '🥉'];
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('leaderboard')
-        .setDescription('Affiche le Top 10 des criminels les plus riches de ce serveur.')
+        .setDescription('Displays the Top 10 richest criminals on this server.')
         .setDescriptionLocalizations({
             'fr': 'Affiche le Top 10 des criminels les plus riches de ce serveur.',
             'en-US': 'Displays the Top 10 richest criminals on this server.',
@@ -23,7 +23,7 @@ module.exports = {
         }),
     async execute(interaction) {
         if (!interaction.guild) {
-            return interaction.reply({ content: i18n.t('fr', 'common.guildOnly'), ephemeral: true });
+            return interaction.reply({ content: i18n.t('en', 'common.guildOnly'), ephemeral: true });
         }
 
         await interaction.deferReply();

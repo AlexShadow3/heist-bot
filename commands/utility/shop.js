@@ -4,7 +4,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('shop')
-        .setDescription('Consulte le catalogue du marché noir.')
+        .setDescription('Browse the black market catalog.')
         .setDescriptionLocalizations({
             'fr': 'Consulte le catalogue du marché noir.',
             'en-US': 'Browse the black market catalog.',

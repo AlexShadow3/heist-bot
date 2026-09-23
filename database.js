@@ -481,14 +481,14 @@ module.exports = {
   },
 
   getGuildLanguage(guildId) {
-    if (!guildId) return 'fr';
+    if (!guildId) return 'en';
     const row = db.prepare('SELECT language FROM guild_settings WHERE guildId = ?').get(guildId);
-    return row && row.language ? row.language : 'fr';
+    return row && row.language ? row.language : 'en';
   },
 
   setGuildLanguage(guildId, language) {
     if (!guildId) return;
-    const normalizedLang = (language === 'en') ? 'en' : 'fr';
+    const normalizedLang = (language === 'fr') ? 'fr' : 'en';
     db.prepare(`
       INSERT INTO guild_settings (guildId, language)
       VALUES (?, ?)

@@ -5,7 +5,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('vault')
-        .setDescription('Consulte la cagnotte saisie stockée dans le Coffre des forces de l\'ordre de ce serveur.')
+        .setDescription('Check the seized jackpot stored in this server\'s Law Enforcement Vault.')
         .setDescriptionLocalizations({
             'fr': 'Consulte la cagnotte saisie stockée dans le Coffre des forces de l\'ordre de ce serveur.',
             'en-US': 'Check the seized jackpot stored in this server\'s Law Enforcement Vault.',
@@ -14,7 +14,7 @@ module.exports = {
     async execute(interaction) {
         if (!interaction.guildId) {
             return interaction.reply({
-                content: i18n.t('fr', 'common.guildOnly'),
+                content: i18n.t('en', 'common.guildOnly'),
                 ephemeral: true,
             });
         }

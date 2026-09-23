@@ -56,7 +56,7 @@ function renderHideout(userId, username, guildId) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('hideout')
-    .setDescription('Gère ta planque secrète.')
+    .setDescription('Manage your secret hideout.')
     .setDescriptionLocalizations({
       'fr': 'Gère ta planque secrète.',
       'en-US': 'Manage your secret hideout.',

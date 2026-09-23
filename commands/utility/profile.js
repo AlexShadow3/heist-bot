@@ -5,7 +5,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('profile')
-        .setDescription('Consulte ton casier, ton argent, tes statistiques et tes équipements.')
+        .setDescription('Check your record, cash, stats, and equipment.')
         .setDescriptionLocalizations({
             'fr': 'Consulte ton casier, ton argent, tes statistiques et tes équipements.',
             'en-US': 'Check your record, cash, stats, and equipment.',

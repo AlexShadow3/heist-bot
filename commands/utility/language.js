@@ -5,7 +5,7 @@ const i18n = require('../../i18n');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('language')
-        .setDescription('Configure la langue du bot pour ce serveur.')
+        .setDescription('Configure the bot language for this server.')
         .setDescriptionLocalizations({
             'fr': 'Configure la langue du bot pour ce serveur.',
             'en-US': 'Configure the bot language for this server.',
@@ -16,7 +16,7 @@ module.exports = {
         .addStringOption(option =>
             option
                 .setName('language')
-                .setDescription('La langue à utiliser / The language to use')
+                .setDescription('The language to use on this server.')
                 .setDescriptionLocalizations({
                     'fr': 'La langue à utiliser sur ce serveur.',
                     'en-US': 'The language to use on this server.',
@@ -24,14 +24,14 @@ module.exports = {
                 })
                 .setRequired(true)
                 .addChoices(
-                    { name: 'Français 🇫🇷', value: 'fr' },
                     { name: 'English 🇬🇧', value: 'en' },
+                    { name: 'Français 🇫🇷', value: 'fr' },
                 )
         ),
     async execute(interaction) {
         if (!interaction.guildId) {
             return interaction.reply({
-                content: i18n.t('fr', 'common.guildOnly'),
+                content: i18n.t('en', 'common.guildOnly'),
                 ephemeral: true,
             });
         }

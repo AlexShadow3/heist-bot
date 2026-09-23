@@ -5,7 +5,7 @@ const i18n = require('../../i18n');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('withdraw')
-    .setDescription('Récupère des fonds de ta planque vers ton portefeuille liquide.')
+    .setDescription('Withdraw funds from your hideout to your cash wallet.')
     .setDescriptionLocalizations({
       'fr': 'Récupère des fonds de ta planque vers ton portefeuille liquide.',
       'en-US': 'Withdraw funds from your hideout to your cash wallet.',
