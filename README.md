@@ -48,7 +48,7 @@ Toutes les commandes utilisent les *Slash Commands* de Discord (`/`).
 
 1. **Cloner le dépôt :**
    ```bash
-   git clone <url-de-ton-repo>
+   git clone https://github.com/AlexShadow3/heist-bot.git
    cd heist-bot
    ```
 
