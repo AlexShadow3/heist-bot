@@ -1,30 +1,32 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../database');
+const i18n = require('../../i18n');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('vault')
-        .setDescription('Consulte la cagnotte saisie stockée dans le Coffre des forces de l\'ordre de ce serveur.'),
+        .setDescription('Consulte la cagnotte saisie stockée dans le Coffre des forces de l\'ordre de ce serveur.')
+        .setDescriptionLocalizations({
+            'fr': 'Consulte la cagnotte saisie stockée dans le Coffre des forces de l\'ordre de ce serveur.',
+            'en-US': 'Check the seized jackpot stored in this server\'s Law Enforcement Vault.',
+            'en-GB': 'Check the seized jackpot stored in this server\'s Law Enforcement Vault.',
+        }),
     async execute(interaction) {
         if (!interaction.guildId) {
             return interaction.reply({
-                content: 'Cette commande doit être exécutée dans un serveur.',
+                content: i18n.t('fr', 'common.guildOnly'),
                 ephemeral: true,
             });
         }
 
         const vaultAmount = db.getPoliceVault(interaction.guildId);
+        const formattedAmount = i18n.formatNumber(vaultAmount, interaction.guildId);
 
         const embed = new EmbedBuilder()
-            .setTitle(`🏛️ Coffre des forces de l'ordre — ${interaction.guild.name}`)
-            .setDescription(
-                `Ce coffre contient toutes les saisies et amendes confisquées aux braqueurs de ce serveur lors de leurs arrestations.\n\n` +
-                `💰 **Montant actuel sous scellés :**\n` +
-                `# ${vaultAmount.toLocaleString('fr-FR')} $\n\n` +
-                `*Utilise \`/heist\` avec un **Badge d'accès corrompu** pour tenter d'infiltrer la salle des preuves et récupérer ce butin !*`
-            )
+            .setTitle(i18n.t(interaction.guildId, 'vault.title', { guild: interaction.guild.name }))
+            .setDescription(i18n.t(interaction.guildId, 'vault.description', { amount: formattedAmount }))
             .setColor(0x3498DB)
-            .setFooter({ text: 'Syndicate Crime Bot • Cagnotte locale au serveur' })
+            .setFooter({ text: i18n.t(interaction.guildId, 'vault.footer') })
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });

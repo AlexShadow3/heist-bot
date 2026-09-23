@@ -1,9 +1,15 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const i18n = require('../../i18n');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('help')
-        .setDescription('Affiche la liste complète des commandes du syndicat et leurs explications.'),
+        .setDescription('Affiche la liste complète des commandes du syndicat et leurs explications.')
+        .setDescriptionLocalizations({
+            'fr': 'Affiche la liste complète des commandes du syndicat et leurs explications.',
+            'en-US': 'Displays the complete list of syndicate commands and their descriptions.',
+            'en-GB': 'Displays the complete list of syndicate commands and their descriptions.',
+        }),
     async execute(interaction) {
         const commands = interaction.client.commands;
 
@@ -13,15 +19,18 @@ module.exports = {
 
         const commandList = sortedCommands.map(cmd => {
             const name = cmd.data.name;
-            const desc = cmd.data.description || 'Aucune description fournie.';
+            const desc = cmd.data.description || i18n.t(interaction.guildId, 'help.noDesc');
             return `• \`/${name}\` — ${desc}`;
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('📖 Guide du Syndicat — Commandes disponibles')
-            .setDescription(`Voici la liste des **${commands.size} commandes** enregistrées :\n\n${commandList.join('\n')}`)
+            .setTitle(i18n.t(interaction.guildId, 'help.title'))
+            .setDescription(i18n.t(interaction.guildId, 'help.description', {
+                count: commands.size,
+                list: commandList.join('\n'),
+            }))
             .setColor(0x2B2D31)
-            .setFooter({ text: 'Syndicate Crime Bot • Mise à jour automatique' })
+            .setFooter({ text: i18n.t(interaction.guildId, 'help.footer') })
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });

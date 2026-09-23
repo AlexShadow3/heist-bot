@@ -1,28 +1,33 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../database');
+const i18n = require('../../i18n');
 
 const ESCAPE_FAIL_COOLDOWN_MINUTES = 5;
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('escape')
-        .setDescription("Tente de t'évader de ta cellule de prison."),
+        .setDescription("Tente de t'évader de ta cellule de prison.")
+        .setDescriptionLocalizations({
+            'fr': "Tente de t'évader de ta cellule de prison.",
+            'en-US': 'Attempt to escape from your prison cell.',
+            'en-GB': 'Attempt to escape from your prison cell.',
+        }),
     async execute(interaction) {
         const player = db.getPlayer(interaction.user.id);
 
         if (!db.isJailed(player)) {
             return interaction.reply({
-                content: "Tu n'es pas en prison, inutile de t'évader !",
+                content: i18n.t(interaction.guildId, 'escape.notJailed'),
                 ephemeral: true,
             });
         }
 
-        // Vérification du cooldown après échec
         const cooldownUntil = db.getEscapeCooldown(interaction.user.id);
         if (cooldownUntil > Date.now()) {
             const minutesLeft = Math.ceil((cooldownUntil - Date.now()) / 60000);
             return interaction.reply({
-                content: `🚨 Les gardiens surveillent étroitement ta cellule après ta dernière tentative ! Attends encore **${minutesLeft} minute(s)** avant de réessayer.`,
+                content: i18n.t(interaction.guildId, 'escape.cooldown', { minutes: minutesLeft }),
                 ephemeral: true,
             });
         }
@@ -34,13 +39,12 @@ module.exports = {
             db.releasePlayer(interaction.user.id);
 
             const winEmbed = new EmbedBuilder()
-                .setTitle('Évasion réussie !')
-                .setDescription(`🏃‍♂️💨 ${interaction.user} a profité d'un moment d'inattention des gardes pour franchir les grillages ! Tu es de nouveau libre.`)
+                .setTitle(i18n.t(interaction.guildId, 'escape.winTitle'))
+                .setDescription(i18n.t(interaction.guildId, 'escape.winDesc', { user: interaction.user }))
                 .setColor(0x57F287);
 
             await interaction.reply({ embeds: [winEmbed] });
         } else {
-            // Échec : ajout de temps de prison + cooldown de 5 minutes
             const extraMinutes = 3;
             db.increaseJailTime(interaction.user.id, extraMinutes);
             db.setEscapeCooldown(interaction.user.id, ESCAPE_FAIL_COOLDOWN_MINUTES);
@@ -49,8 +53,12 @@ module.exports = {
             const remaining = Math.ceil((updatedPlayer.jailedUntil - Date.now()) / 60000);
 
             const failEmbed = new EmbedBuilder()
-                .setTitle('🚨 Évasion manquée !')
-                .setDescription(`Les projecteurs t'ont repéré dans la cour ! Un garde t'a intercepté.\n\nSanction : **+${extraMinutes} minutes** de peine ajoutée(s). Il te reste désormais **${remaining} minute(s)** en cellule.\n⏱️ *Prochaine tentative possible dans ${ESCAPE_FAIL_COOLDOWN_MINUTES} minutes.*`)
+                .setTitle(i18n.t(interaction.guildId, 'escape.failTitle'))
+                .setDescription(i18n.t(interaction.guildId, 'escape.failDesc', {
+                    extraMinutes,
+                    remaining,
+                    cooldown: ESCAPE_FAIL_COOLDOWN_MINUTES,
+                }))
                 .setColor(0xED4245);
 
             await interaction.reply({ embeds: [failEmbed] });

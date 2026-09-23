@@ -8,143 +8,151 @@ const {
     ComponentType,
 } = require('discord.js');
 const db = require('../../database');
-const items = require('../../items');
+const i18n = require('../../i18n');
 
 // Registre en mémoire pour empêcher de participer à plusieurs braquages simultanément
 const activePlayers = new Set();
 
-const TARGETS = {
+const BASE_TARGETS = {
     epicerie: {
-        name: 'Épicerie',
         loot: [200, 600],
         successRate: 0.80,
         jailTime: 2,
         optionalItem: 'crowbar',
         bonusRate: 0.10,
-        btnLabel: 'Utiliser Pied-de-biche (+10 %)',
-        cooldownMinutes: 5, // Gain faible -> 5 min
+        cooldownMinutes: 5,
     },
     bijouterie: {
-        name: 'Bijouterie de quartier',
         loot: [800, 2000],
         successRate: 0.60,
         jailTime: 5,
         optionalItem: 'bolt_cutter',
         bonusRate: 0.10,
-        btnLabel: 'Utiliser Coupe-boulon (+10 %)',
-        cooldownMinutes: 15, // Gain moyen -> 15min
+        cooldownMinutes: 15,
     },
     banque_quartier: {
-        name: 'Banque de quartier',
         loot: [2000, 4500],
         successRate: 0.45,
         jailTime: 7,
         requires: 'jammer',
         hack: {
-            title: 'BOÎTIER D\'ALARME - BANQUE DE QUARTIER',
             length: 4,
             time: 8_000,
             bonus: 0.10,
         },
-        cooldownMinutes: 30, // Gain élevé -> 30 min
+        cooldownMinutes: 30,
     },
     magasin_luxe: {
-        name: 'Magasin de luxe',
         loot: [3500, 7500],
         successRate: 0.40,
         jailTime: 8,
         requires: 'lockpick_kit',
         hack: {
-            title: 'VITRINES CONNECTÉES - MAGASIN DE LUXE',
             length: 6,
             time: 11_000,
             bonus: 0.15,
         },
-        cooldownMinutes: 45, // Gain très élevé -> 45min
+        cooldownMinutes: 45,
     },
     banque: {
-        name: 'Banque centrale',
         loot: [6000, 15000],
         successRate: 0.25,
         jailTime: 12,
         requires: 'drill',
         hack: {
-            title: 'SERVEUR MAINFRAME - BANQUE CENTRALE',
             length: 8,
             time: 14_000,
             bonus: 0.25,
         },
-        cooldownMinutes: 60, // Gain extrême -> 1h
+        cooldownMinutes: 60,
     },
     coffre_police: {
-        name: 'Coffre des forces de l\'ordre',
         isPoliceVault: true,
         jailTime: 15,
         requires: 'police_badge',
         hack: {
-            title: 'SALLE DES SCIELLÉS & PREUVES - QG DE POLICE',
             length: 10,
             time: 18_000,
         },
-        cooldownMinutes: 120, // Jackpot -> 2h
+        cooldownMinutes: 120,
     },
 };
 
 const KEY_ITEMS = ['key_bronze', 'key_silver', 'key_gold', 'key_diamond', 'key_special'];
-const HACK_KEYS = [
-    { id: 'btn_red', label: 'Rouge', emoji: '🔴', style: ButtonStyle.Danger },
-    { id: 'btn_blue', label: 'Bleu', emoji: '🔵', style: ButtonStyle.Primary },
-    { id: 'btn_green', label: 'Vert', emoji: '🟢', style: ButtonStyle.Success },
-    { id: 'btn_yellow', label: 'Jaune', emoji: '🟡', style: ButtonStyle.Secondary },
-];
+
+function getTargetInfo(key, guildId, vaultAmount = 0) {
+    const base = BASE_TARGETS[key];
+    const name = i18n.t(guildId, `heist.targets.${key}.name`);
+    const descTemplate = i18n.t(guildId, `heist.targets.${key}.description`, {
+        amount: i18n.formatNumber(vaultAmount, guildId),
+    });
+    const btnLabel = i18n.t(guildId, `heist.targets.${key}.btnLabel`);
+    const hackTitle = i18n.t(guildId, `heist.targets.${key}.hackTitle`);
+
+    return {
+        ...base,
+        name,
+        description: descTemplate,
+        btnLabel: btnLabel !== `heist.targets.${key}.btnLabel` ? btnLabel : undefined,
+        hack: base.hack ? { ...base.hack, title: hackTitle } : undefined,
+    };
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('heist')
-        .setDescription('Organise un braquage en équipe avec mini-jeux tactiques.'),
+        .setDescription('Organise un braquage en équipe avec mini-jeux tactiques.')
+        .setDescriptionLocalizations({
+            'fr': 'Organise un braquage en équipe avec mini-jeux tactiques.',
+            'en-US': 'Organize a team heist with tactical mini-games.',
+            'en-GB': 'Organize a team heist with tactical mini-games.',
+        }),
     async execute(interaction) {
         if (!interaction.guildId) {
             return interaction.reply({
-                content: 'Cette commande ne peut être exécutée que dans un serveur.',
+                content: i18n.t('fr', 'common.guildOnly'),
                 ephemeral: true,
             });
         }
 
+        const guildId = interaction.guildId;
         const leader = db.getPlayer(interaction.user.id);
         if (db.isJailed(leader)) {
             const remaining = Math.ceil((leader.jailedUntil - Date.now()) / 60000);
             return interaction.reply({
-                content: `🚨 Tu es en cellule pour encore ${remaining} minute(s). Impossible de braquer.`,
+                content: i18n.t(guildId, 'heist.jailed', { minutes: remaining }),
                 ephemeral: true,
             });
         }
 
-        // Vérification d'activité en cours
         if (activePlayers.has(interaction.user.id)) {
             return interaction.reply({
-                content: 'Tu es déjà en train de préparer ou de participer à un braquage !',
+                content: i18n.t(guildId, 'heist.alreadyInHeist'),
                 ephemeral: true,
             });
         }
 
         activePlayers.add(interaction.user.id);
 
-        const currentVault = db.getPoliceVault(interaction.guildId);
+        const currentVault = db.getPoliceVault(guildId);
+        const targetKeys = ['epicerie', 'bijouterie', 'banque_quartier', 'magasin_luxe', 'banque', 'coffre_police'];
+        const options = targetKeys.map((k, index) => {
+            const tInfo = getTargetInfo(k, guildId, currentVault);
+            return {
+                label: `${index + 1}. ${tInfo.name}`,
+                description: tInfo.description.slice(0, 100),
+                value: k,
+            };
+        });
+
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('select_target')
-            .setPlaceholder('Choisis la cible du braquage')
-            .addOptions([
-                { label: '1. Épicerie', description: 'Facile (80 % succès) | Pied-de-biche optionnel', value: 'epicerie' },
-                { label: '2. Bijouterie de quartier', description: 'Moyen (60 % succès) | Coupe-boulon optionnel', value: 'bijouterie' },
-                { label: '3. Banque de quartier', description: 'Difficile (45 % succès) | Brouilleur requis + Hack (4 touches)', value: 'banque_quartier' },
-                { label: '4. Magasin de luxe', description: 'Très difficile (40 % succès) | Kit crochetage requis + Hack (6 touches)', value: 'magasin_luxe' },
-                { label: '5. Banque centrale', description: 'Extrême (25 % succès) | Perceuse requise + Hack expert (8 touches)', value: 'banque' },
-                { label: '6. Coffre des forces de l\'ordre', description: `Cagnotte : ${currentVault.toLocaleString('fr-FR')}$ | Badge requis + Hack élite (10 touches)`, value: 'coffre_police' },
-            ]);
+            .setPlaceholder(i18n.t(guildId, 'heist.selectPlaceholder'))
+            .addOptions(options);
 
         const selectRow = new ActionRowBuilder().addComponents(selectMenu);
         const initialMsg = await interaction.reply({
-            content: '📌 **Choisis une cible dans le menu ci-dessous :**',
+            content: i18n.t(guildId, 'heist.selectPrompt'),
             components: [selectRow],
             ephemeral: true,
             fetchReply: true,
@@ -160,10 +168,10 @@ module.exports = {
             await selectInteraction.deferUpdate();
         } catch {
             activePlayers.delete(interaction.user.id);
-            return interaction.editReply({ content: 'Temps écoulé, plan annulé.', components: [] });
+            return interaction.editReply({ content: i18n.t(guildId, 'heist.timeoutCancelled'), components: [] });
         }
 
-        const target = TARGETS[selectedKey];
+        const target = getTargetInfo(selectedKey, guildId, currentVault);
 
         // Vérification du cooldown spécifique à la cible
         const targetCooldown = db.getHeistCooldown(interaction.user.id, selectedKey);
@@ -171,16 +179,17 @@ module.exports = {
             activePlayers.delete(interaction.user.id);
             const minutesLeft = Math.ceil((targetCooldown - Date.now()) / 60000);
             return interaction.followUp({
-                content: `⏳ Tu ne peux pas encore attaquer **${target.name}**. Tu dois attendre encore **${minutesLeft} minute(s)**.`,
+                content: i18n.t(guildId, 'heist.targetCooldown', { target: target.name, minutes: minutesLeft }),
                 ephemeral: true,
             });
         }
 
         if (target.requires && db.getItemQuantity(interaction.user.id, target.requires) < 1) {
             activePlayers.delete(interaction.user.id);
-            const reqName = items[target.requires]?.name || target.requires;
+            const reqItem = i18n.getItem(target.requires, guildId);
+            const reqName = reqItem ? reqItem.name : target.requires;
             return interaction.followUp({
-                content: `❌ Tu n'as pas l'équipement requis (**${reqName}**) pour lancer ce braquage ! Passe par le \`/shop\`.`,
+                content: i18n.t(guildId, 'heist.missingEquipment', { item: reqName }),
                 ephemeral: true,
             });
         }
@@ -192,26 +201,26 @@ module.exports = {
 
         const joinBtn = new ButtonBuilder()
             .setCustomId('join_heist')
-            .setLabel("Rejoindre l'équipe")
+            .setLabel(i18n.t(guildId, 'heist.btnJoin'))
             .setStyle(ButtonStyle.Success);
         const leaveBtn = new ButtonBuilder()
             .setCustomId('leave_heist')
-            .setLabel("Quitter l'équipe")
+            .setLabel(i18n.t(guildId, 'heist.btnLeave'))
             .setStyle(ButtonStyle.Secondary);
         const cancelBtn = new ButtonBuilder()
             .setCustomId('cancel_heist')
-            .setLabel('Annuler le braquage')
+            .setLabel(i18n.t(guildId, 'heist.btnCancel'))
             .setStyle(ButtonStyle.Danger);
         const keyBtn = new ButtonBuilder()
             .setCustomId('use_key')
-            .setLabel('Activer une Clé')
+            .setLabel(i18n.t(guildId, 'heist.btnUseKey'))
             .setStyle(ButtonStyle.Secondary);
 
         const lobbyComponents = [joinBtn, leaveBtn, cancelBtn, keyBtn];
         if (target.optionalItem) {
             const useToolBtn = new ButtonBuilder()
                 .setCustomId('use_tool')
-                .setLabel(target.btnLabel)
+                .setLabel(target.btnLabel || i18n.t(guildId, 'heist.btnJoin'))
                 .setStyle(ButtonStyle.Primary);
             lobbyComponents.push(useToolBtn);
         }
@@ -220,26 +229,37 @@ module.exports = {
         const renderLobby = () => {
             let toolStatus = '';
             if (target.optionalItem) {
+                const optItem = i18n.getItem(target.optionalItem, guildId);
                 toolStatus = toolUser
-                    ? `\n🔧 **Équipement activé :** ${items[target.optionalItem].name} par${toolUser.username}`
-                    : `\n🔧 **Équipement disponible :** Aucun activé`;
+                    ? i18n.t(guildId, 'heist.lobbyToolActivated', { item: optItem.name, user: toolUser.username })
+                    : i18n.t(guildId, 'heist.lobbyToolNone');
             }
-            let keyStatus = keyCommitment
-                ? `\n🔑 **Multiplicateur engagé :** ${items[keyCommitment.itemId].name} par${keyCommitment.user.username}`
-                : '';
+            let keyStatus = '';
+            if (keyCommitment) {
+                const kItem = i18n.getItem(keyCommitment.itemId, guildId);
+                keyStatus = i18n.t(guildId, 'heist.lobbyKeyActivated', { item: kItem.name, user: keyCommitment.user.username });
+            }
             let extraInfo = '';
             if (target.isPoliceVault) {
-                extraInfo = `\n🚨 **Objectif :** Infiltration de la salle des scellés (butin tiré au sort : 20 % ou rafle totale 100 %)`;
+                extraInfo = i18n.t(guildId, 'heist.lobbyPoliceExtra');
             }
+            const teamLines = team.map(u => `👤 ${u.username}`).join('\n');
             return new EmbedBuilder()
-                .setTitle(`Préparation : ${target.name}`)
-                .setDescription(`Leader : ${interaction.user}\n\n**Équipe actuelle (${team.length}) :**\n${team.map(u => `👤 ${u.username}`).join('\n')}${toolStatus}${keyStatus}${extraInfo}`)
+                .setTitle(i18n.t(guildId, 'heist.lobbyPreparation', { target: target.name }))
+                .setDescription(i18n.t(guildId, 'heist.lobbyDescription', {
+                    leader: interaction.user,
+                    count: team.length,
+                    team: teamLines,
+                    toolStatus,
+                    keyStatus,
+                    extraInfo,
+                }))
                 .setColor(0xFEE75C)
-                .setFooter({ text: 'Départ du convoi dans 30 secondes...' });
+                .setFooter({ text: i18n.t(guildId, 'heist.lobbyFooter') });
         };
 
         const lobbyMsg = await interaction.channel.send({
-            content: `🚨 **${interaction.user.username}** prépare un braquage sur **${target.name}** !`,
+            content: i18n.t(guildId, 'heist.lobbyAnnouncement', { user: interaction.user.username, target: target.name }),
             embeds: [renderLobby()],
             components: [lobbyRow],
         });
@@ -253,7 +273,7 @@ module.exports = {
             if (btnInteraction.customId === 'cancel_heist') {
                 if (btnInteraction.user.id !== interaction.user.id) {
                     return btnInteraction.reply({
-                        content: "❌ Seul l'organisateur du braquage peut annuler l'opération.",
+                        content: i18n.t(guildId, 'heist.cancelOnlyLeader'),
                         ephemeral: true,
                     });
                 }
@@ -261,7 +281,7 @@ module.exports = {
                 team.forEach(u => activePlayers.delete(u.id));
                 lobbyCollector.stop('cancelled');
                 return btnInteraction.update({
-                    content: '🛑 **Braquage annulé par le chef d\'équipe.**',
+                    content: i18n.t(guildId, 'heist.cancelledByLeader'),
                     embeds: [],
                     components: [],
                 });
@@ -270,12 +290,12 @@ module.exports = {
             if (btnInteraction.customId === 'leave_heist') {
                 if (btnInteraction.user.id === interaction.user.id) {
                     return btnInteraction.reply({
-                        content: 'En tant que leader, utilise le bouton "Annuler".',
+                        content: i18n.t(guildId, 'heist.leaveLeaderWarn'),
                         ephemeral: true,
                     });
                 }
                 if (!team.some(u => u.id === btnInteraction.user.id)) {
-                    return btnInteraction.reply({ content: 'Tu ne fais pas partie de l\'équipe.', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.notInTeam'), ephemeral: true });
                 }
                 if (toolUser && toolUser.id === btnInteraction.user.id) {
                     toolUser = null;
@@ -285,51 +305,54 @@ module.exports = {
                 }
                 team = team.filter(u => u.id !== btnInteraction.user.id);
                 activePlayers.delete(btnInteraction.user.id);
-                await btnInteraction.reply({ content: 'Tu as quitté l\'équipe de braquage.', ephemeral: true });
+                await btnInteraction.reply({ content: i18n.t(guildId, 'heist.leftTeam'), ephemeral: true });
                 return lobbyMsg.edit({ embeds: [renderLobby()] });
             }
 
             if (btnInteraction.customId === 'join_heist') {
                 const p = db.getPlayer(btnInteraction.user.id);
                 if (db.isJailed(p)) {
-                    return btnInteraction.reply({ content: '🚨 Tu es en cellule, tu ne peux pas participer.', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.joinJailed'), ephemeral: true });
                 }
                 if (team.some(u => u.id === btnInteraction.user.id)) {
-                    return btnInteraction.reply({ content: 'Tu es déjà dans l\'équipe.', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.alreadyInTeam'), ephemeral: true });
                 }
                 if (activePlayers.has(btnInteraction.user.id)) {
-                    return btnInteraction.reply({ content: 'Tu participes déjà à un autre braquage !', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.alreadyInHeist'), ephemeral: true });
                 }
 
-                // Vérification du cooldown pour l'équipier
                 const memberCd = db.getHeistCooldown(btnInteraction.user.id, selectedKey);
                 if (memberCd > Date.now()) {
                     const minutesLeft = Math.ceil((memberCd - Date.now()) / 60000);
                     return btnInteraction.reply({
-                        content: `⏳ Tu ne peux pas attaquer **${target.name}** tout de suite. Attends encore **${minutesLeft} minute(s)**.`,
+                        content: i18n.t(guildId, 'heist.targetCooldown', { target: target.name, minutes: minutesLeft }),
                         ephemeral: true,
                     });
                 }
 
                 activePlayers.add(btnInteraction.user.id);
                 team.push(btnInteraction.user);
-                await btnInteraction.reply({ content: 'Tu as rejoint l\'équipe !', ephemeral: true });
+                await btnInteraction.reply({ content: i18n.t(guildId, 'heist.joinedTeam'), ephemeral: true });
                 return lobbyMsg.edit({ embeds: [renderLobby()] });
             }
 
             if (btnInteraction.customId === 'use_tool') {
                 if (!team.some(u => u.id === btnInteraction.user.id)) {
-                    return btnInteraction.reply({ content: 'Tu dois rejoindre l\'équipe avant d\'utiliser ton matériel.', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.toolMustJoinFirst'), ephemeral: true });
                 }
+                const optItem = i18n.getItem(target.optionalItem, guildId);
                 if (db.getItemQuantity(btnInteraction.user.id, target.optionalItem) < 1) {
                     return btnInteraction.reply({
-                        content: `❌ Tu ne possèdes pas de **${items[target.optionalItem].name}** dans ton inventaire ! Achète-le au \`/shop\`.`,
+                        content: i18n.t(guildId, 'heist.toolNotOwned', { item: optItem.name }),
                         ephemeral: true,
                     });
                 }
                 toolUser = btnInteraction.user;
                 await btnInteraction.reply({
-                    content: `🔧 Tu as engagé ton **${items[target.optionalItem].name}** pour ce braquage (+${Math.round(target.bonusRate * 100)} % succès) ! Attention, il se brisera en cas d'échec.`,
+                    content: i18n.t(guildId, 'heist.toolActivated', {
+                        item: optItem.name,
+                        bonus: Math.round(target.bonusRate * 100),
+                    }),
                     ephemeral: true,
                 });
                 return lobbyMsg.edit({ embeds: [renderLobby()] });
@@ -337,27 +360,30 @@ module.exports = {
 
             if (btnInteraction.customId === 'use_key') {
                 if (!team.some(u => u.id === btnInteraction.user.id)) {
-                    return btnInteraction.reply({ content: 'Tu dois d\'abord rejoindre l\'équipe pour engager une clé.', ephemeral: true });
+                    return btnInteraction.reply({ content: i18n.t(guildId, 'heist.keyMustJoinFirst'), ephemeral: true });
                 }
                 const availableKeys = KEY_ITEMS.filter(k => db.getItemQuantity(btnInteraction.user.id, k) > 0);
                 if (availableKeys.length === 0) {
                     return btnInteraction.reply({
-                        content: '🔑 Tu ne possèdes aucune clé de butin (Bronze, Argent, Or, Diamant ou Spéciale) ! Achète-en au `/shop`.',
+                        content: i18n.t(guildId, 'heist.keyNoneOwned'),
                         ephemeral: true,
                     });
                 }
-                const keyOptions = availableKeys.map(k => ({
-                    label: items[k].name,
-                    description: items[k].description.slice(0, 100),
-                    value: k,
-                }));
+                const keyOptions = availableKeys.map(k => {
+                    const itemData = i18n.getItem(k, guildId);
+                    return {
+                        label: itemData.name,
+                        description: itemData.description.slice(0, 100),
+                        value: k,
+                    };
+                });
                 const keyMenu = new StringSelectMenuBuilder()
                     .setCustomId(`select_key_${btnInteraction.id}`)
-                    .setPlaceholder('Choisis la clé à consommer')
+                    .setPlaceholder(i18n.t(guildId, 'heist.keySelectPlaceholder'))
                     .addOptions(keyOptions);
                 const keyMenuRow = new ActionRowBuilder().addComponents(keyMenu);
                 const keyPrompt = await btnInteraction.reply({
-                    content: '🔑 Choisis la clé à engager pour ce braquage (elle sera **consommée définitivement**, succès ou échec) :',
+                    content: i18n.t(guildId, 'heist.keySelectPrompt'),
                     components: [keyMenuRow],
                     ephemeral: true,
                     fetchReply: true,
@@ -368,17 +394,18 @@ module.exports = {
                         time: 20_000,
                     });
                     const chosenKeyId = keySelection.values[0];
+                    const chosenItem = i18n.getItem(chosenKeyId, guildId);
                     keyCommitment = {
                         user: btnInteraction.user,
                         itemId: chosenKeyId,
                     };
                     await keySelection.update({
-                        content: `🔑 Tu as engagé une **${items[chosenKeyId].name}** ! Le butin de l'équipe sera multiplié si le braquage réussit.`,
+                        content: i18n.t(guildId, 'heist.keyEngaged', { item: chosenItem.name }),
                         components: [],
                     });
                     return lobbyMsg.edit({ embeds: [renderLobby()] });
                 } catch {
-                    return btnInteraction.editReply({ content: 'Sélection de la clé expirée.', components: [] });
+                    return btnInteraction.editReply({ content: i18n.t(guildId, 'heist.keySelectExpired'), components: [] });
                 }
             }
         });
@@ -401,6 +428,13 @@ module.exports = {
                     hackRate = isFullVault ? 0.05 : 0.10;
                 }
 
+                const HACK_KEYS = [
+                    { id: 'btn_red', label: i18n.t(guildId, 'heist.hackButtons.red'), emoji: '🔴', style: ButtonStyle.Danger },
+                    { id: 'btn_blue', label: i18n.t(guildId, 'heist.hackButtons.blue'), emoji: '🔵', style: ButtonStyle.Primary },
+                    { id: 'btn_green', label: i18n.t(guildId, 'heist.hackButtons.green'), emoji: '🟢', style: ButtonStyle.Success },
+                    { id: 'btn_yellow', label: i18n.t(guildId, 'heist.hackButtons.yellow'), emoji: '🟡', style: ButtonStyle.Secondary },
+                ];
+
                 const sequence = Array.from({ length: seqLen }, () =>
                     HACK_KEYS[Math.floor(Math.random() * HACK_KEYS.length)]
                 );
@@ -417,12 +451,18 @@ module.exports = {
                 const hackRow = new ActionRowBuilder().addComponents(hackButtons);
                 const hackEmbed = new EmbedBuilder()
                     .setTitle(`💻 ${hackTitle}`)
-                    .setDescription(`🎯 **Hacker désigné d'office :** ${hacker} !\n\nReproduis la séquence de **${seqLen} touches** dans les **${hackTime / 1000} secondes** :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${Array(seqLen).fill('.').join(' ')} ]\``)
+                    .setDescription(i18n.t(guildId, 'heist.hackSequencePrompt', {
+                        hacker: hacker,
+                        count: seqLen,
+                        time: hackTime / 1000,
+                        display: sequenceDisplay,
+                        progress: Array(seqLen).fill('.').join(' '),
+                    }))
                     .setColor(0x3498DB)
-                    .setFooter({ text: `Seul ${hacker.username} peut interagir avec ce boîtier !` });
+                    .setFooter({ text: i18n.t(guildId, 'heist.hackFooter', { hacker: hacker.username }) });
 
                 await lobbyMsg.edit({
-                    content: `⚠️ **PIRATAGE EN COURS... C'est à ${hacker} de jouer !**`,
+                    content: i18n.t(guildId, 'heist.hackTurnAnnouncement', { hacker: hacker }),
                     embeds: [hackEmbed],
                     components: [hackRow],
                 });
@@ -437,7 +477,7 @@ module.exports = {
                 for await (const [btnInteraction] of hackCollector[Symbol.asyncIterator]()) {
                     if (btnInteraction.user.id !== hacker.id) {
                         await btnInteraction.reply({
-                            content: `❌ Pas touche ! Seul le hacker désigné (**${hacker.username}**) manipule le terminal !`,
+                            content: i18n.t(guildId, 'heist.hackNotHacker', { hacker: hacker.username }),
                             ephemeral: true,
                         });
                         continue;
@@ -451,8 +491,11 @@ module.exports = {
                             await btnInteraction.update({
                                 embeds: [
                                     new EmbedBuilder()
-                                        .setTitle('✅ PARE-FEU NEUTRALISÉ !')
-                                        .setDescription(`**${hacker.username}** a débloqué les systèmes à temps ! (+${Math.round(hackRate * 100)} % de chances)`)
+                                        .setTitle(i18n.t(guildId, 'heist.hackSuccessTitle'))
+                                        .setDescription(i18n.t(guildId, 'heist.hackSuccessDesc', {
+                                            hacker: hacker.username,
+                                            bonus: Math.round(hackRate * 100),
+                                        }))
                                         .setColor(0x57F287),
                                 ],
                                 components: [],
@@ -460,7 +503,13 @@ module.exports = {
                             hackCollector.stop('completed');
                             break;
                         } else {
-                            hackEmbed.setDescription(`🎯 **Hacker désigné :** ${hacker} !\n\nSéquence :\n\n# ${sequenceDisplay}\n\nProgression : \`[ ${progress} ]\``);
+                            hackEmbed.setDescription(i18n.t(guildId, 'heist.hackSequencePrompt', {
+                                hacker: hacker,
+                                count: seqLen,
+                                time: hackTime / 1000,
+                                display: sequenceDisplay,
+                                progress,
+                            }));
                             await btnInteraction.update({ embeds: [hackEmbed] });
                         }
                     } else {
@@ -470,8 +519,11 @@ module.exports = {
                         await btnInteraction.update({
                             embeds: [
                                 new EmbedBuilder()
-                                    .setTitle('🚨 ALARME SILENCIEUSE DÉCLENCHÉE !')
-                                    .setDescription(`Erreur critique de **${hacker.username}** ! Les forces spéciales sont alertées ! (-${Math.round(hackRate * 100)} % de chances)`)
+                                    .setTitle(i18n.t(guildId, 'heist.hackFailTitle'))
+                                    .setDescription(i18n.t(guildId, 'heist.hackFailDesc', {
+                                        hacker: hacker.username,
+                                        penalty: Math.round(hackRate * 100),
+                                    }))
                                     .setColor(0xED4245),
                             ],
                             components: [],
@@ -498,7 +550,12 @@ module.exports = {
                         const rollPossibilities = [2, 3, 5, 10, 20];
                         keyMultiplier = rollPossibilities[Math.floor(Math.random() * rollPossibilities.length)];
                     }
-                    keyConsumedText = `🔑 **${keyCommitment.user.username}** a utilisé une **${items[keyCommitment.itemId].name}** (x${keyMultiplier} aux gains) ! Clé consommée.`;
+                    const kItem = i18n.getItem(keyCommitment.itemId, guildId);
+                    keyConsumedText = i18n.t(guildId, 'heist.keyUsedText', {
+                        user: keyCommitment.user.username,
+                        key: kItem.name,
+                        multiplier: keyMultiplier,
+                    });
                 }
             }
 
@@ -506,15 +563,15 @@ module.exports = {
             let rawLoot = 0;
             let vaultDetailsText = '';
             if (target.isPoliceVault) {
-                const currentTotal = db.getPoliceVault(interaction.guildId);
+                const currentTotal = db.getPoliceVault(guildId);
                 if (isFullVault) {
                     baseRate = 0.05;
                     rawLoot = currentTotal;
-                    vaultDetailsText = `🎰 **JACKPOT DÉCLENCHÉ :** Vous avez forcé le compartiment principal (**100 % du coffre**) !`;
+                    vaultDetailsText = i18n.t(guildId, 'heist.jackpotText');
                 } else {
                     baseRate = 0.20;
                     rawLoot = Math.floor(currentTotal * 0.20);
-                    vaultDetailsText = `🕵️ **INFILTRATION DISCRÈTE :** Vous avez accédé au casier secondaire (**20 % du coffre**) !`;
+                    vaultDetailsText = i18n.t(guildId, 'heist.discreetInfiltrationText');
                 }
             } else {
                 rawLoot = Math.floor(Math.random() * (target.loot[1] - target.loot[0] + 1)) + target.loot[0];
@@ -534,18 +591,19 @@ module.exports = {
                     db.recordHeistAttempt(m.id, true);
                 });
                 if (target.isPoliceVault) {
-                    db.takeFromPoliceVault(interaction.guildId, rawLoot);
+                    db.takeFromPoliceVault(guildId, rawLoot);
                 }
                 const winEmbed = new EmbedBuilder()
-                    .setTitle('💰 Braquage réussi !')
-                    .setDescription(
-                        `Le gang s'est échappé de : **${target.name}** !\n\n` +
-                        (vaultDetailsText ? `${vaultDetailsText}\n\n` : '') +
-                        (keyConsumedText ? `${keyConsumedText}\n\n` : '') +
-                        `💵 **Butin total :** ${calculatedTotalLoot.toLocaleString('fr-FR')} $` +
-                        (keyMultiplier > 1 ? ` *(x${keyMultiplier} appliqué !)*` : '') +
-                        `\n👤 **Part individuelle :** ${share.toLocaleString('fr-FR')} $ (${team.length} membre(s))`
-                    )
+                    .setTitle(i18n.t(guildId, 'heist.winTitle'))
+                    .setDescription(i18n.t(guildId, 'heist.winDesc', {
+                        target: target.name,
+                        vaultDetails: vaultDetailsText ? `${vaultDetailsText}\n\n` : '',
+                        keyConsumed: keyConsumedText ? `${keyConsumedText}\n\n` : '',
+                        total: i18n.formatNumber(calculatedTotalLoot, guildId),
+                        multiplier: keyMultiplier > 1 ? i18n.t(guildId, 'heist.multiplierTag', { multiplier: keyMultiplier }) : '',
+                        share: i18n.formatNumber(share, guildId),
+                        count: team.length,
+                    }))
                     .setColor(0x57F287);
                 await lobbyMsg.edit({ content: null, embeds: [winEmbed], components: [] });
             } else {
@@ -556,11 +614,18 @@ module.exports = {
                 }
                 if (toolUser && target.optionalItem) {
                     db.consumeItem(toolUser.id, target.optionalItem);
-                    itemLossMessages.push(`🔧 Le/La **${items[target.optionalItem].name}** de **${toolUser.username}** s'est brisé(e) pendant la fuite !`);
+                    const optItem = i18n.getItem(target.optionalItem, guildId);
+                    itemLossMessages.push(i18n.t(guildId, 'heist.toolBrokeText', {
+                        item: optItem.name,
+                        user: toolUser.username,
+                    }));
                 }
                 if (target.requires) {
                     db.consumeItem(interaction.user.id, target.requires);
-                    itemLossMessages.push(`👮 Le matériel obligatoire (**${items[target.requires].name}**) du chef a été confisqué par la police !`);
+                    const reqItem = i18n.getItem(target.requires, guildId);
+                    itemLossMessages.push(i18n.t(guildId, 'heist.toolConfiscatedText', {
+                        item: reqItem.name,
+                    }));
                 }
 
                 const baseSharePerMember = Math.floor(rawLoot / team.length);
@@ -574,41 +639,47 @@ module.exports = {
                     const guardReduction = protection.guards * 0.05;
                     const finePerMember = Math.floor(baseFine * Math.max(0, 1 - cameraReduction - guardReduction));
                     const guardUsed = protection.guards > 0 && db.consumeHideoutGuard(member.id);
-                    const { totalSeized, takenFromStash, takenFromCash } = db.seizeFine(interaction.guildId, member.id, finePerMember);
+                    const { totalSeized, takenFromStash, takenFromCash } = db.seizeFine(guildId, member.id, finePerMember);
 
                     if (totalSeized > 0) {
                         const protectionText = cameraReduction || guardUsed ? `, protection à ${Math.round((cameraReduction + guardReduction) * 100)} %` : '';
-                        seizureMessages.push(`💸 **${member.username}** : **${totalSeized.toLocaleString('fr-FR')} $** saisis *(🏦 ${takenFromStash.toLocaleString('fr-FR')} $ planque, 💵 ${takenFromCash.toLocaleString('fr-FR')} $ cash${protectionText})*`);
+                        seizureMessages.push(i18n.t(guildId, 'heist.seizureLine', {
+                            user: member.username,
+                            amount: i18n.formatNumber(totalSeized, guildId),
+                            stash: i18n.formatNumber(takenFromStash, guildId),
+                            cash: i18n.formatNumber(takenFromCash, guildId),
+                            protection: protectionText,
+                        }));
                     } else {
-                        seizureMessages.push(`💸 **${member.username}** : Insolvable, rien à saisir.`);
+                        seizureMessages.push(i18n.t(guildId, 'heist.seizureInsolvent', { user: member.username }));
                     }
                 });
 
                 const outcomes = [];
                 for (const member of team) {
                     if (db.consumeItem(member.id, 'vest')) {
-                        outcomes.push(`🛡️ **${member.username}** a évité la prison grâce à son gilet pare-balles (consommé) !`);
+                        outcomes.push(i18n.t(guildId, 'heist.vestSaved', { user: member.username }));
                     } else {
                         let sentence = target.jailTime;
                         if (db.hasActiveLawyer(member.id)) {
                             sentence = Math.max(1, Math.floor(sentence / 2));
-                            outcomes.push(`⚖️ **${member.username}** : ${sentence} min (peine réduite par l'avocat)`);
+                            outcomes.push(i18n.t(guildId, 'heist.lawyerReducedSentence', { user: member.username, sentence }));
                         } else {
-                            outcomes.push(`🚨 **${member.username}** : ${sentence} min de cellule`);
+                            outcomes.push(i18n.t(guildId, 'heist.jailSentence', { user: member.username, sentence }));
                         }
                         db.jailPlayer(member.id, sentence);
                     }
                 }
 
                 const failEmbed = new EmbedBuilder()
-                    .setTitle('❌ Échec du braquage !')
-                    .setDescription(
-                        `L'alarme a retenti et les forces de l'ordre ont coincé le gang à : **${target.name}** !\n\n` +
-                        (vaultDetailsText ? `${vaultDetailsText}\n\n` : '') +
-                        `${itemLossMessages.length > 0 ? itemLossMessages.join('\n') + '\n\n' : ''}` +
-                        `**👮 Saisies policières (versées au coffre des flics) :**\n${seizureMessages.join('\n')}\n\n` +
-                        `**🚨 Peines de prison :**\n${outcomes.join('\n')}`
-                    )
+                    .setTitle(i18n.t(guildId, 'heist.failTitle'))
+                    .setDescription(i18n.t(guildId, 'heist.failDesc', {
+                        target: target.name,
+                        vaultDetails: vaultDetailsText ? `${vaultDetailsText}\n\n` : '',
+                        itemLoss: itemLossMessages.length > 0 ? itemLossMessages.join('\n') + '\n\n' : '',
+                        seizures: seizureMessages.join('\n'),
+                        jail: outcomes.join('\n'),
+                    }))
                     .setColor(0xED4245);
                 await lobbyMsg.edit({ content: null, embeds: [failEmbed], components: [] });
             }

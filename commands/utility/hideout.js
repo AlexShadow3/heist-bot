@@ -7,29 +7,48 @@ const {
   ComponentType,
 } = require('discord.js');
 const db = require('../../database');
+const i18n = require('../../i18n');
 
-function renderHideout(userId, username) {
+function renderHideout(userId, username, guildId) {
   const hideout = db.getHideout(userId);
-  if (!hideout) return { content: '❌ Tu n\'as pas encore de planque. Utilise `/buy-hideout`.', embeds: [], components: [] };
+  if (!hideout) return { content: i18n.t(guildId, 'hideout.noHideout'), embeds: [], components: [] };
   const level = db.getHideoutLevel(hideout.level);
   const next = db.getHideoutLevel(hideout.level + 1);
+
+  const camerasDetail = `${hideout.cameras}/3 (−${hideout.cameras * 2} %)`;
+  const guardsDetail = `${hideout.guards}/3 (−${hideout.guards * 5} %)`;
+
+  const passiveIncomeText = hideout.level >= 6
+    ? i18n.t(guildId, 'hideout.passiveIncomeDetail', { rate: i18n.formatNumber(1 + (hideout.level - 6) * 0.25, guildId) })
+    : i18n.t(guildId, 'hideout.passiveIncomeUnavailable');
+
   const embed = new EmbedBuilder()
-    .setTitle(`🏚️ Planque de ${username}`)
+    .setTitle(i18n.t(guildId, 'hideout.title', { user: username }))
     .setColor(0x5865F2)
     .addFields(
-      { name: 'Niveau', value: `${hideout.level}/10`, inline: true },
-      { name: 'Solde sécurisé', value: `${db.getPlayer(userId).stash.toLocaleString('fr-FR')} / ${level.capacity.toLocaleString('fr-FR')} $`, inline: true },
-      { name: 'Loyer hebdomadaire', value: `${level.rent.toLocaleString('fr-FR')} $`, inline: true },
-      { name: 'Caméras', value: `${hideout.cameras}/3 (−${hideout.cameras * 2} % de saisie)`, inline: true },
-      { name: 'Gardes', value: `${hideout.guards}/3 (−${hideout.guards * 5} % de saisie, consommés après un échec)`, inline: true },
-      { name: 'Revenu passif', value: hideout.level >= 6 ? `${(1 + (hideout.level - 6) * 0.25).toLocaleString('fr-FR')} % de la capacité chaque lundi` : 'Disponible à partir du niveau 6', inline: false },
+      { name: i18n.t(guildId, 'hideout.level'), value: `${hideout.level}/10`, inline: true },
+      { name: i18n.t(guildId, 'hideout.stash'), value: `${i18n.formatNumber(db.getPlayer(userId).stash, guildId)} / ${i18n.formatNumber(level.capacity, guildId)} $`, inline: true },
+      { name: i18n.t(guildId, 'hideout.rent'), value: `${i18n.formatNumber(level.rent, guildId)} $`, inline: true },
+      { name: i18n.t(guildId, 'hideout.cameras'), value: camerasDetail, inline: true },
+      { name: i18n.t(guildId, 'hideout.guards'), value: guardsDetail, inline: true },
+      { name: i18n.t(guildId, 'hideout.passiveIncome'), value: passiveIncomeText, inline: false },
     );
-  if (next) embed.addFields({ name: 'Prochaine amélioration', value: `Niveau ${next.level} — ${next.price.toLocaleString('fr-FR')} $`, inline: false });
+
+  if (next) {
+    embed.addFields({
+      name: i18n.t(guildId, 'hideout.nextUpgrade'),
+      value: i18n.t(guildId, 'hideout.nextUpgradeDetail', {
+        level: next.level,
+        price: i18n.formatNumber(next.price, guildId),
+      }),
+      inline: false,
+    });
+  }
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('hideout_upgrade').setLabel('Améliorer').setStyle(ButtonStyle.Primary).setDisabled(!next),
-    new ButtonBuilder().setCustomId('hideout_camera').setLabel('Acheter une caméra (25 000 $)').setStyle(ButtonStyle.Secondary).setDisabled(hideout.cameras >= 3),
-    new ButtonBuilder().setCustomId('hideout_guard').setLabel('Engager un garde (40 000 $)').setStyle(ButtonStyle.Secondary).setDisabled(hideout.guards >= 3),
+    new ButtonBuilder().setCustomId('hideout_upgrade').setLabel(i18n.t(guildId, 'hideout.btnUpgrade')).setStyle(ButtonStyle.Primary).setDisabled(!next),
+    new ButtonBuilder().setCustomId('hideout_camera').setLabel(i18n.t(guildId, 'hideout.btnCamera')).setStyle(ButtonStyle.Secondary).setDisabled(hideout.cameras >= 3),
+    new ButtonBuilder().setCustomId('hideout_guard').setLabel(i18n.t(guildId, 'hideout.btnGuard')).setStyle(ButtonStyle.Secondary).setDisabled(hideout.guards >= 3),
   );
   return { embeds: [embed], components: [row] };
 }
@@ -37,9 +56,14 @@ function renderHideout(userId, username) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('hideout')
-    .setDescription('Gère ta planque secrète.'),
+    .setDescription('Gère ta planque secrète.')
+    .setDescriptionLocalizations({
+      'fr': 'Gère ta planque secrète.',
+      'en-US': 'Manage your secret hideout.',
+      'en-GB': 'Manage your secret hideout.',
+    }),
   async execute(interaction) {
-    const initial = renderHideout(interaction.user.id, interaction.user.username);
+    const initial = renderHideout(interaction.user.id, interaction.user.username, interaction.guildId);
     if (!initial.embeds.length) return interaction.reply({ ...initial, ephemeral: true });
     await interaction.reply({ ...initial, ephemeral: true });
     const message = await interaction.fetchReply();
@@ -53,7 +77,7 @@ module.exports = {
         if (button.customId === 'hideout_upgrade') db.upgradeHideout(interaction.user.id);
         if (button.customId === 'hideout_camera') db.buyHideoutCamera(interaction.user.id);
         if (button.customId === 'hideout_guard') db.buyHideoutGuard(interaction.user.id);
-        await button.update(renderHideout(interaction.user.id, interaction.user.username));
+        await button.update(renderHideout(interaction.user.id, interaction.user.username, interaction.guildId));
       } catch (error) {
         await button.reply({ content: `❌ ${error.message}.`, ephemeral: true });
       }

@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../database');
+const i18n = require('../../i18n');
 
 const BAIL_COST = 350;
 
@@ -7,9 +8,14 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('bail')
         .setDescription('Paye la caution d\'un complice en cellule.')
+        .setDescriptionLocalizations({
+            'fr': 'Paye la caution d\'un complice en cellule.',
+            'en-US': 'Pay bail for an accomplice in jail.',
+            'en-GB': 'Pay bail for an accomplice in jail.',
+        })
         .addUserOption(option =>
             option.setName('target')
-                .setDescription('Le membre à libérer')
+                .setDescription('Le membre à libérer / Member to bail out')
                 .setRequired(true)),
     async execute(interaction) {
         const benefactor = db.getPlayer(interaction.user.id);
@@ -17,14 +23,14 @@ module.exports = {
 
         if (db.isJailed(benefactor)) {
             return interaction.reply({
-                content: 'Tu es toi-même en prison, tu ne peux payer la caution de personne !',
+                content: i18n.t(interaction.guildId, 'bail.benefactorJailed'),
                 ephemeral: true,
             });
         }
 
         if (targetUser.id === interaction.user.id) {
             return interaction.reply({
-                content: 'Tu ne peux pas payer ta propre caution, il te faut l\'aide d\'un complice.',
+                content: i18n.t(interaction.guildId, 'bail.selfBail'),
                 ephemeral: true,
             });
         }
@@ -32,14 +38,17 @@ module.exports = {
         const prisoner = db.getPlayer(targetUser.id);
         if (!db.isJailed(prisoner)) {
             return interaction.reply({
-                content: `${targetUser.username} n'est pas en cellule.`,
+                content: i18n.t(interaction.guildId, 'bail.notJailed', { user: targetUser.username }),
                 ephemeral: true,
             });
         }
 
         if (benefactor.cash < BAIL_COST) {
             return interaction.reply({
-                content: `Tu n'as pas assez d'argent ! La caution s'élève à **${BAIL_COST} $** (tu as ${benefactor.cash} $).`,
+                content: i18n.t(interaction.guildId, 'bail.notEnoughCash', {
+                    cost: i18n.formatNumber(BAIL_COST, interaction.guildId),
+                    cash: i18n.formatNumber(benefactor.cash, interaction.guildId),
+                }),
                 ephemeral: true,
             });
         }
@@ -48,8 +57,12 @@ module.exports = {
         db.releasePlayer(targetUser.id);
 
         const embed = new EmbedBuilder()
-            .setTitle('Libération sous caution !')
-            .setDescription(`⚖️ ${interaction.user} a versé **${BAIL_COST} $** pour faire libérer **${targetUser.username}** de garde à vue !`)
+            .setTitle(i18n.t(interaction.guildId, 'bail.title'))
+            .setDescription(i18n.t(interaction.guildId, 'bail.description', {
+                user: interaction.user,
+                cost: i18n.formatNumber(BAIL_COST, interaction.guildId),
+                target: targetUser.username,
+            }))
             .setColor(0x57F287);
 
         await interaction.reply({ embeds: [embed] });

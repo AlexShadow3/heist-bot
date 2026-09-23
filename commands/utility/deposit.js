@@ -1,13 +1,19 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../../database');
+const i18n = require('../../i18n');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('deposit')
         .setDescription('Blanchis ton argent liquide pour le sécuriser dans ta planque (frais : 10 %).')
+        .setDescriptionLocalizations({
+            'fr': 'Blanchis ton argent liquide pour le sécuriser dans ta planque (frais : 10 %).',
+            'en-US': 'Launder your cash to secure it in your hideout (fee: 10%).',
+            'en-GB': 'Launder your cash to secure it in your hideout (fee: 10%).',
+        })
         .addIntegerOption(option =>
             option.setName('amount')
-                .setDescription('Montant de liquide à déposer')
+                .setDescription('Montant de liquide à déposer / Amount to deposit')
                 .setRequired(true)
                 .setMinValue(10)),
     async execute(interaction) {
@@ -16,14 +22,14 @@ module.exports = {
 
         if (!hideout) {
             return interaction.reply({
-                content: '❌ Tu dois d\'abord acheter une planque avec `/buy-hideout`.',
+                content: i18n.t(interaction.guildId, 'deposit.noHideout'),
                 ephemeral: true,
             });
         }
 
         if (db.isJailed(player)) {
             return interaction.reply({
-                content: '🚨 Impossible de blanchir de l\'argent depuis ta cellule.',
+                content: i18n.t(interaction.guildId, 'deposit.jailed'),
                 ephemeral: true,
             });
         }
@@ -32,7 +38,9 @@ module.exports = {
 
         if (player.cash < amount) {
             return interaction.reply({
-                content: `❌ Fonds insuffisants ! Tu n'as que **${player.cash} $** en liquide sur toi.`,
+                content: i18n.t(interaction.guildId, 'deposit.notEnoughCash', {
+                    cash: i18n.formatNumber(player.cash, interaction.guildId),
+                }),
                 ephemeral: true,
             });
         }
@@ -42,7 +50,9 @@ module.exports = {
         const netAmount = amount - fee;
         if (player.stash + netAmount > level.capacity) {
             return interaction.reply({
-                content: `❌ Ce dépôt dépasserait la capacité de ta planque (${level.capacity.toLocaleString('fr-FR')} $).`,
+                content: i18n.t(interaction.guildId, 'deposit.exceedCapacity', {
+                    capacity: i18n.formatNumber(level.capacity, interaction.guildId),
+                }),
                 ephemeral: true,
             });
         }
@@ -50,13 +60,13 @@ module.exports = {
         db.depositToStash(interaction.user.id, amount);
 
         const embed = new EmbedBuilder()
-            .setTitle('🧼 Blanchiment d\'argent terminé')
+            .setTitle(i18n.t(interaction.guildId, 'deposit.title'))
             .setColor(0x5865F2)
-            .setDescription(`Opération discrète effectuée avec succès dans un commerce de façade.`)
+            .setDescription(i18n.t(interaction.guildId, 'deposit.description'))
             .addFields(
-                { name: 'Montant sale déposé', value: `${amount} $`, inline: true },
-                { name: 'Frais de blanchiment (10 %)', value: `-${fee} $`, inline: true },
-                { name: 'Crédité dans la planque', value: `🔒 **${netAmount} $**`, inline: true },
+                { name: i18n.t(interaction.guildId, 'deposit.fieldDirty'), value: `${i18n.formatNumber(amount, interaction.guildId)} $`, inline: true },
+                { name: i18n.t(interaction.guildId, 'deposit.fieldFee'), value: `-${i18n.formatNumber(fee, interaction.guildId)} $`, inline: true },
+                { name: i18n.t(interaction.guildId, 'deposit.fieldClean'), value: `🔒 **${i18n.formatNumber(netAmount, interaction.guildId)} $**`, inline: true },
             );
 
         await interaction.reply({ embeds: [embed] });

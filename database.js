@@ -128,6 +128,13 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS guild_settings (
+    guildId TEXT PRIMARY KEY,
+    language TEXT DEFAULT 'fr'
+  )
+`).run();
+
 module.exports = {
   getPlayer(userId) {
     let player = db.prepare('SELECT * FROM players WHERE userId = ?').get(userId);
@@ -471,5 +478,21 @@ module.exports = {
       FROM players
       ORDER BY netWorth DESC
     `).all();
+  },
+
+  getGuildLanguage(guildId) {
+    if (!guildId) return 'fr';
+    const row = db.prepare('SELECT language FROM guild_settings WHERE guildId = ?').get(guildId);
+    return row && row.language ? row.language : 'fr';
+  },
+
+  setGuildLanguage(guildId, language) {
+    if (!guildId) return;
+    const normalizedLang = (language === 'en') ? 'en' : 'fr';
+    db.prepare(`
+      INSERT INTO guild_settings (guildId, language)
+      VALUES (?, ?)
+      ON CONFLICT(guildId) DO UPDATE SET language = ?
+    `).run(guildId, normalizedLang, normalizedLang);
   },
 };
