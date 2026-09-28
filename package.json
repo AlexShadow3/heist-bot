@@ -5,10 +5,12 @@
   },
   "name": "heist-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "database.js",
+  "description": "Discord criminal economy bot with co-op heists, hideouts, black market and prison system",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node main.js",
+    "deploy-commands": "node deploy-commands.js"
   },
   "repository": {
     "type": "git",
